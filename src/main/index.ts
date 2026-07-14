@@ -1,37 +1,88 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'node:path'
 import { Output } from '@julusian/midi'
+import { modulatedValue } from '../shared/lfo'
+import type { DigitoneTrackId, Groove, LfoId, RackTarget, SceneId, SequencerConfig, TrackConfig, TrackId } from '../shared/types'
 
-type TrackId = 'bass' | 'chords' | 'puncture'
-type Groove = 'straight' | 'push' | 'late' | 'broken'
-type SceneId = 'full' | 'bass' | 'space' | 'drop'
-type Step = { notes: number[]; velocity: number; gate: number; probability: number }
-type TrackConfig = { id: TrackId; channel: number; length: number; groove: Groove; muted: boolean; tone: number; space: number; steps: Step[] }
-type SequencerConfig = { bpm: number; scene: SceneId; tracks: TrackConfig[] }
+type PortConnection = { output: Output; name: string; targets: Set<RackTarget> }
 
 let window: BrowserWindow | null = null
-let output: Output | null = null
-let openedPort = -1
-let openedPortName: string | null = null
 let clock: NodeJS.Timeout | null = null
 let releaseTimers: NodeJS.Timeout[] = []
 let scheduledTimers: NodeJS.Timeout[] = []
 let pulse = 0
-let config: SequencerConfig = { bpm: 132, scene: 'full', tracks: [] }
+let config: SequencerConfig = { bpm: 132, scene: 'full', lfos: [], tracks: [] }
+const targetPorts: Partial<Record<RackTarget, number>> = {}
+const portConnections = new Map<number, PortConnection>()
 
-const sceneDensity: Record<SceneId, Record<TrackId, number>> = {
-  full: { bass: 1, chords: 1, puncture: 1 },
-  bass: { bass: 1, chords: 0, puncture: 0.25 },
-  space: { bass: 0.55, chords: 1, puncture: 0.4 },
-  drop: { bass: 0, chords: 0, puncture: 0.2 }
+const sceneDensity: Record<SceneId, Record<DigitoneTrackId, number>> = {
+  full: { 'dn-bass': 1, 'dn-vamp': 1, 'dn-puncture': 1 },
+  bass: { 'dn-bass': 1, 'dn-vamp': 0, 'dn-puncture': 0.25 },
+  space: { 'dn-bass': 0.55, 'dn-vamp': 1, 'dn-puncture': 0.4 },
+  drop: { 'dn-bass': 0, 'dn-vamp': 0, 'dn-puncture': 0.2 }
 }
 
-function midiMessage(message: number[]): void {
-  if (output && openedPort >= 0) output.sendMessage(message)
+function midiMessage(target: RackTarget, message: number[]): void {
+  const port = targetPorts[target]
+  if (port === undefined) return
+  portConnections.get(port)?.output.sendMessage(message)
+}
+
+function broadcastMessage(message: number[]): void {
+  portConnections.forEach(({ output }) => output.sendMessage(message))
+}
+
+function detachTarget(target: RackTarget): void {
+  const port = targetPorts[target]
+  if (port === undefined) return
+  const connection = portConnections.get(port)
+  connection?.targets.delete(target)
+  delete targetPorts[target]
+  if (connection && connection.targets.size === 0) {
+    connection.output.closePort()
+    portConnections.delete(port)
+  }
+}
+
+function selectOutput(target: RackTarget, port: number | null): void {
+  if (clock) {
+    midiMessage(target, [0xfc])
+    config.tracks.filter((track) => track.target === target).forEach((track) => midiMessage(target, [0xb0 + track.channel - 1, 123, 0]))
+  }
+  detachTarget(target)
+  if (port === null) return
+
+  let connection = portConnections.get(port)
+  if (!connection) {
+    const nextOutput = new Output()
+    if (port < 0 || port >= nextOutput.getPortCount()) {
+      nextOutput.closePort()
+      throw new Error(`MIDI output ${port} is no longer available`)
+    }
+    const name = nextOutput.getPortName(port)
+    nextOutput.openPort(port)
+    connection = { output: nextOutput, name, targets: new Set() }
+    portConnections.set(port, connection)
+  }
+  connection.targets.add(target)
+  targetPorts[target] = port
+  if (clock) midiMessage(target, [0xfa])
+}
+
+function outputName(target: RackTarget): string | null {
+  const port = targetPorts[target]
+  return port === undefined ? null : portConnections.get(port)?.name ?? null
+}
+
+function closeOutputs(): void {
+  portConnections.forEach(({ output }) => output.closePort())
+  portConnections.clear()
+  delete targetPorts.digitone
+  delete targetPorts.digitakt
 }
 
 function allNotesOff(): void {
-  for (const channel of new Set(config.tracks.map((track) => track.channel))) midiMessage([0xb0 + channel - 1, 123, 0])
+  config.tracks.forEach((track) => midiMessage(track.target, [0xb0 + track.channel - 1, 123, 0]))
   releaseTimers.forEach(clearTimeout)
   scheduledTimers.forEach(clearTimeout)
   releaseTimers = []
@@ -65,40 +116,64 @@ function grooveOffset(groove: Groove, stepIndex: number): number {
   return [0, 28, -15, 16][stepIndex % 4]
 }
 
-function sendNRPN(channel: number, parameter: number, value: number): void {
+function sendNRPN(target: RackTarget, channel: number, parameter: number, value: number): void {
   const status = 0xb0 + channel - 1
   const safeValue = Math.max(0, Math.min(127, Math.round(value)))
-  midiMessage([status, 99, 1])
-  midiMessage([status, 98, parameter])
-  midiMessage([status, 6, safeValue])
-  midiMessage([status, 38, 0])
-  midiMessage([status, 101, 127])
-  midiMessage([status, 100, 127])
+  midiMessage(target, [status, 99, 1])
+  midiMessage(target, [status, 98, parameter])
+  midiMessage(target, [status, 6, safeValue])
+  midiMessage(target, [status, 38, 0])
+  midiMessage(target, [status, 101, 127])
+  midiMessage(target, [status, 100, 127])
+}
+
+function sendTone(track: TrackConfig, tone: number): void {
+  sendNRPN('digitone', track.channel, 20, 20 + tone * 107 / 127)
+  sendNRPN('digitone', track.channel, 78, tone * 0.6)
+}
+
+function sendSpace(track: TrackConfig, space: number): void {
+  sendNRPN('digitone', track.channel, 40, space * 0.8)
+  sendNRPN('digitone', track.channel, 39, space * 0.95)
+}
+
+function modulatedMacroValue(track: TrackConfig, macro: 'tone' | 'space'): number {
+  const base = track[macro] ?? (macro === 'tone' ? 64 : 32)
+  const source: LfoId | undefined = macro === 'tone' ? track.toneLfo : track.spaceLfo
+  const lfo = source ? config.lfos.find((candidate) => candidate.id === source) : undefined
+  return modulatedValue(base, lfo, clock ? pulse : 0)
 }
 
 function sendTrackMacros(track: TrackConfig): void {
-  const filter = 20 + track.tone * 107 / 127
-  const feedback = track.tone * 0.6
-  const delay = track.space * 0.8
-  const reverb = track.space * 0.95
-  sendNRPN(track.channel, 20, filter) // Filter frequency
-  sendNRPN(track.channel, 78, feedback) // FM feedback
-  sendNRPN(track.channel, 40, delay) // Delay send
-  sendNRPN(track.channel, 39, reverb) // Reverb send
+  if (track.target !== 'digitone') return
+  sendTone(track, modulatedMacroValue(track, 'tone'))
+  sendSpace(track, modulatedMacroValue(track, 'space'))
 }
 
 function sendAllMacros(): void { config.tracks.forEach(sendTrackMacros) }
 
+function sendLfoMacros(): void {
+  config.tracks.forEach((track) => {
+    if (track.target !== 'digitone') return
+    if (track.toneLfo) sendTone(track, modulatedMacroValue(track, 'tone'))
+    if (track.spaceLfo) sendSpace(track, modulatedMacroValue(track, 'space'))
+  })
+}
+
+function trackDensity(track: TrackConfig): number {
+  return track.target === 'digitone' ? sceneDensity[config.scene][track.id as DigitoneTrackId] : 1
+}
+
 function playTrackStep(track: TrackConfig, stepIndex: number): void {
   const currentTrack = config.tracks.find((candidate) => candidate.id === track.id) ?? track
-  if (currentTrack.muted) return
+  if (currentTrack.muted || targetPorts[currentTrack.target] === undefined) return
   const step = currentTrack.steps[stepIndex % currentTrack.length]
   if (!step || step.notes.length === 0) return
-  if (Math.random() * 100 >= step.probability * sceneDensity[config.scene][currentTrack.id]) return
+  if (Math.random() * 100 >= step.probability * trackDensity(currentTrack)) return
   const notes = step.notes.map((note) => Math.max(0, Math.min(127, note)))
-  notes.forEach((note) => midiMessage([0x90 + currentTrack.channel - 1, note, step.velocity]))
+  notes.forEach((note) => midiMessage(currentTrack.target, [0x90 + currentTrack.channel - 1, note, step.velocity]))
   const releaseAfterMs = Math.max(12, stepDurationMs() * step.gate / 100)
-  scheduleRelease(() => notes.forEach((note) => midiMessage([0x80 + currentTrack.channel - 1, note, 0])), releaseAfterMs)
+  scheduleRelease(() => notes.forEach((note) => midiMessage(currentTrack.target, [0x80 + currentTrack.channel - 1, note, 0])), releaseAfterMs)
 }
 
 function playStep(globalStep: number): void {
@@ -123,9 +198,12 @@ function playStep(globalStep: number): void {
 }
 
 function tick(): void {
-  midiMessage([0xf8])
-  if (pulse % 6 === 0) playStep(Math.floor(pulse / 6))
-  pulse = (pulse + 1) % (24 * 4 * 16)
+  broadcastMessage([0xf8])
+  if (pulse % 6 === 0) {
+    playStep(Math.floor(pulse / 6))
+    sendLfoMacros()
+  }
+  pulse += 1
 }
 
 function restartClock(): void {
@@ -134,7 +212,7 @@ function restartClock(): void {
 }
 
 function stopTransport(): void {
-  if (clock) midiMessage([0xfc])
+  if (clock) broadcastMessage([0xfc])
   if (clock) clearInterval(clock)
   clock = null
   allNotesOff()
@@ -145,7 +223,7 @@ function startTransport(): void {
   stopTransport()
   pulse = 0
   sendAllMacros()
-  midiMessage([0xfa])
+  broadcastMessage([0xfa])
   tick()
   restartClock()
 }
@@ -173,21 +251,16 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   ipcMain.handle('midi:list-outputs', listOutputs)
-  ipcMain.handle('midi:select-output', (_, port: number) => {
-    if (output) output.closePort()
-    output = new Output()
-    output.openPort(port)
-    openedPort = port
-    openedPortName = output.getPortName(port)
-  })
-  ipcMain.handle('midi:status', () => ({ playing: clock !== null, outputName: openedPortName }))
+  ipcMain.handle('midi:select-output', (_, target: RackTarget, port: number | null) => selectOutput(target, port))
+  ipcMain.handle('midi:status', () => ({
+    playing: clock !== null,
+    outputNames: { digitone: outputName('digitone'), digitakt: outputName('digitakt') }
+  }))
   ipcMain.handle('sequencer:configure', (_, next: SequencerConfig) => {
     const tempoChanged = config.bpm !== next.bpm
-    const newlyMutedChannels = next.tracks
-      .filter((track) => track.muted && !config.tracks.find((previous) => previous.id === track.id)?.muted)
-      .map((track) => track.channel)
+    const newlyMuted = next.tracks.filter((track) => track.muted && !config.tracks.find((previous) => previous.id === track.id)?.muted)
     config = next
-    for (const channel of newlyMutedChannels) midiMessage([0xb0 + channel - 1, 123, 0])
+    newlyMuted.forEach((track) => midiMessage(track.target, [0xb0 + track.channel - 1, 123, 0]))
     if (clock && tempoChanged) restartClock()
   })
   ipcMain.handle('sequencer:set-macros', (_, trackId: TrackId, tone: number, space: number) => {
@@ -204,4 +277,4 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
-app.on('before-quit', stopTransport)
+app.on('before-quit', () => { stopTransport(); closeOutputs() })
