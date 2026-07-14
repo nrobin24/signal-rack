@@ -369,7 +369,7 @@ function LaneTitle({ label, muted, onMute }: { label: string; muted: boolean; on
 }
 
 function Macro({ label, value, source, routeLabel, onChange, onSource }: { label: string; value: number; source: LfoId | 'manual'; routeLabel: string; onChange: (value: number) => void; onSource: (source: LfoId | 'manual') => void }): React.JSX.Element {
-  return <div className="macro"><div><span>{label}</span><output>{value}</output></div><input aria-label={`${routeLabel} center`} type="range" min="0" max="127" value={value} onChange={(event) => onChange(Number(event.target.value))} /><select aria-label={routeLabel} value={source} onChange={(event) => onSource(event.target.value as LfoId | 'manual')}><option value="manual">MANUAL</option>{(['lfo-1', 'lfo-2', 'lfo-3', 'lfo-4'] as LfoId[]).map((id, index) => <option value={id} key={id}>LFO {index + 1}</option>)}</select></div>
+  return <div className={`macro ${source === 'manual' ? '' : 'patched'}`}><div><span>{label}</span><output>{value}</output></div><input aria-label={`${routeLabel} center`} type="range" min="0" max="127" value={value} onChange={(event) => onChange(Number(event.target.value))} /><select aria-label={routeLabel} value={source} onChange={(event) => onSource(event.target.value as LfoId | 'manual')}><option value="manual">MANUAL</option>{(['lfo-1', 'lfo-2', 'lfo-3', 'lfo-4'] as LfoId[]).map((id, index) => <option value={id} key={id}>LFO {index + 1}</option>)}</select></div>
 }
 
 function StepEditor({ track, index, step, onChange }: { track: DigitoneTrack; index: number; step: Step; onChange: (change: (step: Step) => Step) => void }): React.JSX.Element {
