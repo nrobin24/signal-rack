@@ -1,6 +1,6 @@
 # Signal Rack
 
-Signal Rack is an Electron MIDI environment built from device-specific instrument modules and a shared musical direction layer.
+Signal Rack is a Tauri desktop MIDI environment built from device-specific instrument modules and a shared musical direction layer. React renders the rack; Rust owns generation, clocking, modulation, scheduling, and CoreMIDI output.
 
 The rack currently contains four top-level modules:
 
@@ -13,10 +13,40 @@ The rack currently contains four top-level modules:
 
 ```bash
 npm install
+npm run test:e2e:install
 npm run dev
 ```
 
+The first run compiles the Rust backend and opens the native Tauri window. Signal Rack requires Node.js, the stable Rust toolchain, and the Xcode command-line tools on macOS.
+
+Useful development commands:
+
+```bash
+npm run dev          # Vite + native Tauri development window
+npm run check        # TypeScript, Rust, and frontend production checks
+npm test             # Rust unit tests + browser E2E command-boundary test
+npm run test:e2e:install # One-time Chromium install for the E2E suite
+npm run midi:ports   # Native CoreMIDI output scan
+npm run build        # Production macOS .app bundle
+```
+
+The Playwright E2E suite runs the real React interface against a mock of the Tauri command boundary, so it never sends notes to connected hardware. Rust unit tests cover generation, groove timing, LFO waveforms, clock periods, and value clamping. Use `npm run midi:ports` and the native development window for hardware validation; the browser preview alone does not exercise CoreMIDI. Production builds are written to `src-tauri/target/release/bundle/macos/Signal Rack.app`.
+
 The transport and tempo are global. Each instrument module has its own MIDI output selector, so Digitone and Digitakt can be connected directly over separate USB MIDI ports. Either instrument can run by itself.
+
+## Architecture
+
+The frontend sends typed Tauri commands for output discovery and selection, rack configuration, transport, macro changes, and Seed Lab generation. Rust keeps the authoritative sequencer state and emits step/stopped events back to the interface.
+
+The native engine provides:
+
+- A 24-PPQN MIDI clock and synchronized transport messages.
+- Per-lane length, groove offsets, probability, velocity, gate scheduling, mutes, and note releases.
+- Shared-port or separate-port Digitone/Digitakt routing through CoreMIDI.
+- Digitone Tone/Space NRPN macros and clocked Global LFO modulation.
+- Deterministic Seed Lab harmony, motif, and rhythm generation for all ten lanes.
+
+The command boundary lives in `src/renderer/src/backend.ts`; Rust modules live in `src-tauri/src`. Electron, its preload bridge, the Node MIDI dependency, and the TypeScript generator/LFO engines are no longer part of the application.
 
 ## Seed Lab
 

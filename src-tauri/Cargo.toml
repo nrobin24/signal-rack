@@ -1,0 +1,29 @@
+[package]
+name = "signal-rack"
+version = "0.4.0"
+description = "Native MIDI and generative sequencing backend for Signal Rack"
+authors = ["Nicholas Robin"]
+edition = "2024"
+rust-version = "1.85"
+default-run = "signal-rack"
+
+[lib]
+name = "signal_rack_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "signal-rack"
+path = "src/main.rs"
+
+[[bin]]
+name = "signal-rack-cli"
+path = "src/bin/signal-rack-cli.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+midir = "0.11.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tauri = { version = "2.11.5", features = [] }

@@ -12,7 +12,7 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "strict": true,
-    "types": ["node", "vitest/globals"]
+    "types": ["node"]
   },
-  "include": ["src", "electron.vite.config.ts"]
+  "include": ["src/renderer", "src/shared", "e2e", "vite.config.ts", "playwright.config.ts"]
 }

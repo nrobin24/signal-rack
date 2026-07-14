@@ -28,17 +28,6 @@ button { cursor: pointer; }
     radial-gradient(circle at 83% 32%, #342746 0, transparent 26%),
     linear-gradient(165deg, #161a17, #090a09 70%);
 }
-.app-shell::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 20;
-  pointer-events: none;
-  opacity: .09;
-  mix-blend-mode: screen;
-  background: repeating-linear-gradient(0deg, transparent 0 3px, #ffffff18 4px);
-}
-
 .transport {
   position: sticky;
   top: 0;

@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
-import { lfoPeriodLabels } from '../../shared/lfo'
 import type { DigitaktTrackId, DigitoneTrackId, Groove, LfoConfig, LfoId, LfoPeriod, LfoShape, RackTarget, SceneId, SequencerConfig, Step, TrackConfig, TrackId } from '../../shared/types'
+import { backend } from './backend'
 import {
   bassRoleLabels,
-  generateSeed,
   harmonyLabels,
   rhythmLabels,
   rootLabels,
@@ -12,7 +11,8 @@ import {
   type HarmonyColor,
   type RhythmConcept,
   type SeedSettings
-} from './generator'
+} from './seed'
+import { lfoPeriodLabels } from './modulation'
 
 type Color = 'orange' | 'cyan' | 'violet' | 'lime' | 'rose' | 'blue' | 'teal' | 'amber' | 'pink' | 'sand'
 type DigitoneTrack = TrackConfig & {
@@ -99,7 +99,13 @@ export default function App(): React.JSX.Element {
   const [lastSeed, setLastSeed] = useState('D · Dorian smoke · Broken pocket · Anchor bass · medium energy')
 
   useEffect(() => {
-    Promise.all([window.midi.listOutputs(), window.midi.getStatus()]).then(([nextOutputs, status]) => {
+    let disposed = false
+    let unsubscribeStep: (() => void) | undefined
+    let unsubscribeStop: (() => void) | undefined
+    void Promise.all([backend.listOutputs(), backend.getStatus(), backend.onStep((steps) => setCurrentSteps(steps)), backend.onStopped(() => { setPlaying(false); setCurrentSteps({}) })]).then(([nextOutputs, status, nextUnsubscribeStep, nextUnsubscribeStop]) => {
+      if (disposed) { nextUnsubscribeStep(); nextUnsubscribeStop(); return }
+      unsubscribeStep = nextUnsubscribeStep
+      unsubscribeStop = nextUnsubscribeStop
       setOutputs(nextOutputs)
       setSelectedOutputs({
         digitone: status.outputNames.digitone === null ? null : nextOutputs.indexOf(status.outputNames.digitone),
@@ -107,9 +113,7 @@ export default function App(): React.JSX.Element {
       })
       setPlaying(status.playing)
     }).catch(console.error)
-    const unsubscribeStep = window.midi.onStep((steps) => setCurrentSteps(steps as Partial<Record<TrackId, number>>))
-    const unsubscribeStop = window.midi.onStopped(() => { setPlaying(false); setCurrentSteps({}) })
-    return () => { unsubscribeStep(); unsubscribeStop() }
+    return () => { disposed = true; unsubscribeStep?.(); unsubscribeStop?.() }
   }, [])
 
   function config(nextDigitone = digitoneTracks, nextDigitakt = digitaktTracks, nextScene = scene, nextBpm = bpm, nextLfos = lfos): SequencerConfig {
@@ -124,19 +128,19 @@ export default function App(): React.JSX.Element {
   }
 
   async function selectModuleOutput(target: RackTarget, port: number | null): Promise<void> {
-    await window.midi.selectOutput(target, port)
+    await backend.selectOutput(target, port)
     setSelectedOutputs((current) => ({ ...current, [target]: port }))
-    if (port !== null) await window.midi.configure(config())
+    if (port !== null) await backend.configure(config())
   }
 
   async function refreshOutputs(): Promise<void> {
-    const [nextOutputs, status] = await Promise.all([window.midi.listOutputs(), window.midi.getStatus()])
+    const [nextOutputs, status] = await Promise.all([backend.listOutputs(), backend.getStatus()])
     const nextSelection: OutputSelection = { digitone: null, digitakt: null }
     for (const target of ['digitone', 'digitakt'] as RackTarget[]) {
       const priorName = status.outputNames[target] ?? (selectedOutputs[target] === null ? null : outputs[selectedOutputs[target]])
       const nextPort = priorName === null ? null : nextOutputs.indexOf(priorName)
       nextSelection[target] = nextPort === -1 ? null : nextPort
-      await window.midi.selectOutput(target, nextSelection[target])
+      await backend.selectOutput(target, nextSelection[target])
     }
     setOutputs(nextOutputs)
     setSelectedOutputs(nextSelection)
@@ -145,13 +149,13 @@ export default function App(): React.JSX.Element {
 
   async function startTransport(): Promise<void> {
     if (selectedOutputs.digitone === null && selectedOutputs.digitakt === null) return
-    await window.midi.configure(config())
-    await window.midi.start()
+    await backend.configure(config())
+    await backend.start()
     setPlaying(true)
   }
 
   async function stopTransport(): Promise<void> {
-    await window.midi.stop()
+    await backend.stop()
     setPlaying(false)
     setCurrentSteps({})
   }
@@ -159,13 +163,13 @@ export default function App(): React.JSX.Element {
   function updateBpm(nextBpm: number): void {
     const safeBpm = Math.max(60, Math.min(220, nextBpm || 60))
     setBpm(safeBpm)
-    if (playing) void window.midi.configure(config(digitoneTracks, digitaktTracks, scene, safeBpm))
+    if (playing) void backend.configure(config(digitoneTracks, digitaktTracks, scene, safeBpm))
   }
 
   function updateDigitoneTrack(trackId: DigitoneTrackId, change: (track: DigitoneTrack) => DigitoneTrack): void {
     setDigitoneTracks((current) => {
       const next = current.map((track) => track.id === trackId ? change(track) : track)
-      if (playing) void window.midi.configure(config(next))
+      if (playing) void backend.configure(config(next))
       return next
     })
   }
@@ -173,14 +177,14 @@ export default function App(): React.JSX.Element {
   function updateDigitaktTrack(trackId: DigitaktTrackId, change: (track: DigitaktTrack) => DigitaktTrack): void {
     setDigitaktTracks((current) => {
       const next = current.map((track) => track.id === trackId ? change(track) : track)
-      if (playing) void window.midi.configure(config(digitoneTracks, next))
+      if (playing) void backend.configure(config(digitoneTracks, next))
       return next
     })
   }
 
   function chooseScene(nextScene: SceneId): void {
     setScene(nextScene)
-    if (playing) void window.midi.configure(config(digitoneTracks, digitaktTracks, nextScene))
+    if (playing) void backend.configure(config(digitoneTracks, digitaktTracks, nextScene))
   }
 
   function changeMacro(trackId: DigitoneTrackId, macro: 'tone' | 'space', value: number): void {
@@ -189,8 +193,8 @@ export default function App(): React.JSX.Element {
     const nextTrack = { ...current, [macro]: value }
     const nextTracks = digitoneTracks.map((track) => track.id === trackId ? nextTrack : track)
     setDigitoneTracks(nextTracks)
-    void window.midi.configure(config(nextTracks))
-    void window.midi.setMacros(trackId, nextTrack.tone, nextTrack.space)
+    void backend.configure(config(nextTracks))
+    void backend.setMacros(trackId, nextTrack.tone, nextTrack.space)
   }
 
   function changeMacroRoute(trackId: DigitoneTrackId, macro: 'tone' | 'space', source: LfoId | 'manual'): void {
@@ -200,20 +204,20 @@ export default function App(): React.JSX.Element {
     const nextTrack = { ...current, [routeKey]: source === 'manual' ? undefined : source }
     const nextTracks = digitoneTracks.map((track) => track.id === trackId ? nextTrack : track)
     setDigitoneTracks(nextTracks)
-    void window.midi.configure(config(nextTracks)).then(() => window.midi.setMacros(trackId, nextTrack.tone, nextTrack.space))
+    void backend.configure(config(nextTracks)).then(() => backend.setMacros(trackId, nextTrack.tone, nextTrack.space))
   }
 
   function updateLfo(id: LfoId, change: (lfo: LfoConfig) => LfoConfig): void {
     setLfos((current) => {
       const next = current.map((lfo) => lfo.id === id ? change(lfo) : lfo)
-      void window.midi.configure(config(digitoneTracks, digitaktTracks, scene, bpm, next))
+      void backend.configure(config(digitoneTracks, digitaktTracks, scene, bpm, next))
       return next
     })
   }
 
-  function seedRack(): void {
+  async function seedRack(): Promise<void> {
     const nextCount = seedCount + 1
-    const generated = generateSeed(seedSettings, nextCount)
+    const generated = await backend.generateSeed(seedSettings, nextCount)
     const generatedById = new Map(generated.tracks.map((track) => [track.id, track]))
     const nextDigitone = digitoneTracks.map((track) => {
       const next = generatedById.get(track.id)
@@ -227,8 +231,8 @@ export default function App(): React.JSX.Element {
     setDigitaktTracks(nextDigitakt)
     setSeedCount(nextCount)
     setLastSeed(generated.summary)
-    void window.midi.configure(config(nextDigitone, nextDigitakt))
-    nextDigitone.forEach((track) => void window.midi.setMacros(track.id, track.tone, track.space))
+    void backend.configure(config(nextDigitone, nextDigitakt))
+    nextDigitone.forEach((track) => void backend.setMacros(track.id, track.tone, track.space))
   }
 
   const selectedTrack = digitoneTracks.find((track) => track.id === selectedStep.trackId) ?? digitoneTracks[0]
