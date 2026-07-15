@@ -55,7 +55,7 @@ jobs:
           releaseBody: |
             Download the installer for your computer:
 
-            - Windows x64: use the `-setup.exe` file.
+            - Windows x64: use the file ending in `windows_x64.exe`.
             - Apple Silicon Mac: use the `aarch64` DMG.
             - Intel Mac: use the `x64` DMG.
 
