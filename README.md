@@ -4,7 +4,7 @@ Signal Rack is a Tauri desktop MIDI environment built from device-specific instr
 
 The rack currently contains four top-level modules:
 
-- **Seed Lab** turns a small set of plain-language choices into related material for the whole rack.
+- **Sequence Generator** turns a small set of plain-language choices into related material for the whole rack.
 - **Global LFOs** provides four transport-synced modulation sources that can be routed into supported parameters.
 - **Digitone** provides bass, chord/vamp, and puncture lanes with editable notes, timing, probability, scenes, and sound macros.
 - **Digitakt** provides seven rhythm voices—kick, snare, closed hat, open hat, rimshot, clap, and texture—with editable trigs, timing feel, channels, and mutes.
@@ -37,7 +37,7 @@ The transport and tempo are global. Each instrument module has its own MIDI outp
 
 ## Architecture
 
-The frontend sends typed Tauri commands for output discovery and selection, rack configuration, transport, macro changes, and Seed Lab generation. Rust keeps the authoritative sequencer state and emits step/stopped events back to the interface.
+The frontend sends typed Tauri commands for output discovery and selection, rack configuration, transport, macro changes, and Sequence Generator requests. Rust keeps the authoritative sequencer state and emits step/stopped events back to the interface.
 
 The native engine provides:
 
@@ -45,20 +45,28 @@ The native engine provides:
 - Tempo-relative per-lane groove offsets, probability, velocity, gate scheduling, mutes, and note releases.
 - Shared-port or separate-port Digitone/Digitakt routing through CoreMIDI.
 - Digitone Tone/Space NRPN macros and clocked Global LFO modulation.
-- Deterministic Seed Lab harmony, motif, and rhythm generation for all ten lanes.
+- Deterministic harmony, motif, and rhythm generation for all ten lanes.
 
 The command boundary lives in `src/renderer/src/backend.ts`; Rust modules live in `src-tauri/src`. Electron, its preload bridge, the Node MIDI dependency, and the TypeScript generator/LFO engines are no longer part of the application.
 
-The four lane feels preserve the same musical displacement as tempo changes: **Straight** stays on the grid, **Push** moves selected offbeats early, **Late** places selected offbeats behind the grid, and **Broken** alternates late/early/late over each four-step group. MIDI clock messages always take priority over scheduled note, UI, and modulation work.
+The four lane grooves preserve the same musical displacement as tempo changes: **Straight** stays on the grid, **Early** moves selected offbeats forward, **Late** places selected offbeats behind the grid, and **Push/Pull** alternates late/early/late over each four-step group. MIDI clock messages always take priority over scheduled note, UI, and modulation work.
 
-## Seed Lab
+Every instrument lane stores up to 64 steps. **EDIT 1 BAR** shows one editable 16-step bar at a time, with clearly grouped four-step beats. **VIEW 4 BARS** shows four labeled 16-step maps at once; selecting any cell sends it to the full editor and prepares its bar for editing.
 
-Choose a root, vamp color, bass role, rhythm idea, and energy level, then press **SEED RACK**. One related pattern is written directly into all ten lanes:
+## Sequence Generator
 
-- Digitone receives bass pitches and phrase length, extended-chord voicings, sparse upper-register punctures, timing feel, chance, and starting `TONE`/`SPACE` values.
-- Digitakt receives related kick, snare, closed-hat, open-hat, rimshot, clap, and texture parts derived from the same rhythm concept.
+Choose a root, harmony color, bass role, style, energy level, four-bar shape, and phrase leader, then press **GENERATE**. The v2 engine writes a coordinated 64-step phrase directly into all ten lanes:
 
-Repeated presses keep the direction but create small deterministic mutations. The planned “grow three sketches, audition, then commit” workflow is intentionally deferred; this first version stays immediate.
+- Digitone receives four-bar bass motifs, parameter-aware extended-chord movement, upper-register punctures, timing feel, chance, and starting `TONE`/`SPACE` values.
+- Digitakt receives related kick, snare, closed-hat, open-hat, rimshot, clap, and texture parts across the same four-bar form.
+
+The phrase shapes cover **A–A′–B–turn**, **two-bar question/answer**, **event/consequence/space/return**, and **call/pressure/break/challenge**. One selected family—drums, bass, harmony, or texture—leads the development while a complementary family supplies the final turn. Stable anchors recur across bars, bar three carries the main development or absence, and bar four returns with a controlled pickup instead of making every lane fill simultaneously.
+
+Styles include broken pocket, house, footwork, dub, jungle, UK bass, Brazilian interlock, and electro. Repeated presses preserve the chosen identity while creating small deterministic mutations. The planned “grow three sketches, audition, then commit” workflow remains deferred so this version stays immediate.
+
+Vamp movement deliberately scales with the musical controls. Low-energy Dorian can remain a one-chord modal pocket; House and Open colors expand into three- or four-harmony motion; Jazz-Funk uses four extended voicings. Higher energy and **HARMONY** leadership introduce more movement, inversions, and late approach chords, while the selected phrase shape determines the four-bar progression. A short polymetric vamp carries a compact local chord cycle rather than repeating a single voicing.
+
+The **CYCLE** control separates the shared four-bar composition from individual lane loop lengths. **AUTO** keeps the Digitakt parts and phrase-leading Digitone voice on the 64-step frame while giving one complementary Digitone voice a style-appropriate 10-, 12-, or 14-step cycle. **POLY** uses two independent Digitone cycles while retaining a 64-step phrase leader. **LOCKED** keeps every generated lane at 64 steps. Short cycles contain purpose-built local material rather than simply truncating the four-bar phrase.
 
 ## Global LFOs
 
@@ -72,7 +80,7 @@ Select the Digitone output and configure synth tracks 1–3 in the compact routi
 
 For `TONE` and `SPACE`, enable `MIDI CONFIG > PORT CONFIG > RECEIVE CC/NRPN`. `TONE` moves filter frequency and FM feedback; `SPACE` moves delay and reverb sends using documented Digitone NRPN messages. Either macro can be routed independently to one of the four Global LFOs.
 
-Each cell accepts MIDI numbers (`38 41 45`) or scientific note names (`D2 F2 A2`). Leave the note field blank or press **MAKE REST** for silence. Phrase lengths apply from the start of each 16-cell row.
+Each cell accepts MIDI numbers (`38 41 45`) or scientific note names (`D2 F2 A2`). Leave the note field blank or press **MAKE REST** for silence. Lane lengths can extend to 64 steps independently of the visible Detail page.
 
 Digitone scenes currently control only the three Digitone roles. The Scene Lens shows the exact density applied to Bass, Vamp, and Puncture; per-lane mutes remain independent overrides.
 
@@ -82,7 +90,7 @@ Load appropriate Sounds on Digitakt audio tracks 1–7 in this order: kick, snar
 
 Enable `MIDI CONFIG > PORT CONFIG > RECEIVE NOTES`. Signal Rack sends MIDI note 60 to each track channel, which plays the loaded Sound at its base pitch. It sequences the Sounds already loaded on the hardware; it does not transfer samples or replace the Digitakt project.
 
-Each drum pad has two separate actions: click the large numbered surface to place/remove the trig, or click the small **EDIT** strip to select it without changing its state. The compact Trig Editor then controls on/off state, velocity, gate, and probability for that step.
+In Detail view, each drum pad has two separate actions: click the large numbered surface to place/remove the trig, or click the small **EDIT** strip to select it without changing its state. In Overview, select any compact cell and use the Trig Editor for on/off state, velocity, gate, and probability.
 
 ## Current scope
 

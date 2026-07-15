@@ -179,6 +179,10 @@ pub enum RhythmConcept {
     House,
     Footwork,
     Dub,
+    Jungle,
+    UkBass,
+    Brazilian,
+    Electro,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -189,6 +193,35 @@ pub enum Energy {
     High,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PhraseShape {
+    #[default]
+    AaTurn,
+    QuestionAnswer,
+    EventSpace,
+    CallChallenge,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PhraseLeader {
+    Pulse,
+    #[default]
+    Bass,
+    Harmony,
+    Texture,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CycleMode {
+    #[default]
+    Auto,
+    Locked,
+    Poly,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SeedSettings {
@@ -197,6 +230,12 @@ pub struct SeedSettings {
     pub bass_role: BassRole,
     pub rhythm: RhythmConcept,
     pub energy: Energy,
+    #[serde(default)]
+    pub shape: PhraseShape,
+    #[serde(default)]
+    pub leader: PhraseLeader,
+    #[serde(default)]
+    pub cycle_mode: CycleMode,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
