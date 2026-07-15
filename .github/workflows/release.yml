@@ -58,4 +58,4 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
-          releaseAssetNamePattern: signal-rack_[version]_[platform]_[arch].[ext]
+          releaseAssetNamePattern: signal-rack_[platform]_[arch].[ext]

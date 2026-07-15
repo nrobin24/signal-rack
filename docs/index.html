@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#10140f" />
+    <meta name="description" content="Signal Rack is a generative MIDI sequencing environment for Elektron Digitone and Digitakt." />
+    <meta property="og:title" content="Signal Rack — generative MIDI sequencing" />
+    <meta property="og:description" content="Generate, shape, and perform four-bar ideas across Digitone and Digitakt." />
+    <meta property="og:image" content="https://nrobin24.github.io/signal-rack/images/signal-rack-hero.png" />
+    <meta property="og:type" content="website" />
+    <title>Signal Rack — generative MIDI sequencing</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#top"><i></i><strong>SIGNAL RACK</strong><span>SR—04</span></a>
+      <nav aria-label="Primary navigation">
+        <a href="#docs">QUICK START</a>
+        <a href="https://github.com/nrobin24/signal-rack">SOURCE</a>
+        <a href="https://github.com/nrobin24/signal-rack/releases/latest">RELEASES</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero module">
+        <div class="module-label"><span>GENERATIVE MIDI ENVIRONMENT</span><b>SEED / PULSE / MODULATION</b></div>
+        <img src="images/signal-rack-hero.png" alt="Signal Rack interface mounted as a physical studio rack instrument" />
+        <div class="hero-copy">
+          <div>
+            <p class="eyebrow">DIGITONE + DIGITAKT</p>
+            <h1>Find the musical idea.<br />Then get your hands on it.</h1>
+            <p class="lede">Signal Rack turns a few musical directions into coordinated four-bar bass, harmony, melody, and rhythm—then leaves the useful controls exposed for editing and performance.</p>
+          </div>
+          <div class="downloads" aria-label="Downloads">
+            <a class="button primary" href="https://github.com/nrobin24/signal-rack/releases/latest/download/signal-rack_windows_x64.exe">WINDOWS X64 <span>↓</span></a>
+            <a class="button secondary" href="https://github.com/nrobin24/signal-rack/releases/latest/download/signal-rack_darwin_aarch64.dmg">APPLE SILICON <span>↓</span></a>
+            <a class="text-link" href="https://github.com/nrobin24/signal-rack/releases/latest">VIEW LATEST RELEASE →</a>
+            <small>Early builds are unsigned. Windows or macOS may ask you to confirm before opening.</small>
+          </div>
+        </div>
+      </section>
+
+      <section class="meters" aria-label="Capabilities">
+        <article><span>PHRASE</span><strong>64</strong><small>STEPS / 4 BARS</small></article>
+        <article><span>VOICES</span><strong>10</strong><small>3 SYNTH + 7 DRUM</small></article>
+        <article><span>MODULATION</span><strong>04</strong><small>GLOBAL CLOCKED LFOS</small></article>
+        <article><span>CLOCK</span><strong>24</strong><small>PPQN MIDI SYNC</small></article>
+      </section>
+
+      <section class="split">
+        <article class="module statement">
+          <div class="module-label"><span>WHAT IT IS</span><b>PHRASE ENGINE V2</b></div>
+          <h2>A sketch machine that speaks Elektron.</h2>
+          <p>The Sequence Generator coordinates every lane around one root, harmony color, rhythmic style, energy, phrase shape, and leader. It can keep everything on a four-bar frame or let selected Digitone parts drift in shorter polymetric cycles.</p>
+          <ul>
+            <li><b>Digitone</b><span>Bass motifs, extended chord vamps, punctures, groove, probability, scenes, and Tone/Space macros.</span></li>
+            <li><b>Digitakt</b><span>Kick, snare, closed hat, open hat, rimshot, clap, and texture patterns with editable trigs.</span></li>
+            <li><b>Global LFOs</b><span>Four transport-synced sources with per-parameter routing and bipolar depth.</span></li>
+          </ul>
+        </article>
+
+        <article class="module process">
+          <div class="module-label"><span>WORKFLOW</span><b>NO MENU DIVING</b></div>
+          <ol>
+            <li><span>01</span><div><b>CHOOSE A DIRECTION</b><p>Root, harmony, style, energy, phrase shape, and which musical family leads.</p></div></li>
+            <li><span>02</span><div><b>GENERATE</b><p>Write a related 64-step idea into all ten instrument lanes.</p></div></li>
+            <li><span>03</span><div><b>EDIT THE EXCEPTIONS</b><p>Change trigs, notes, chance, gates, groove, lane lengths, and voicings.</p></div></li>
+            <li><span>04</span><div><b>PERFORM THE RACK</b><p>Use scenes, mutes, macros, and clocked modulation without losing the phrase.</p></div></li>
+          </ol>
+        </article>
+      </section>
+
+      <section class="module setup" id="docs">
+        <div class="module-label"><span>QUICK START</span><b>HARDWARE SETUP</b></div>
+        <div class="setup-grid">
+          <article>
+            <p class="eyebrow">01 / INSTALL</p>
+            <h3>Open Signal Rack</h3>
+            <p>Download the installer for your computer. Connect Digitone, Digitakt, or both over USB MIDI before launching.</p>
+          </article>
+          <article>
+            <p class="eyebrow">02 / ROUTE</p>
+            <h3>Select MIDI outputs</h3>
+            <p>Choose each device in its module. Default Digitone channels are 1–3; default Digitakt channels are 1–7.</p>
+          </article>
+          <article>
+            <p class="eyebrow">03 / DIGITONE</p>
+            <h3>Enable notes + NRPN</h3>
+            <p>Enable MIDI note reception and <code>RECEIVE CC/NRPN</code> so the Tone and Space controls can reach the synth.</p>
+          </article>
+          <article>
+            <p class="eyebrow">04 / DIGITAKT</p>
+            <h3>Load seven sounds</h3>
+            <p>Use tracks 1–7 for kick, snare, closed hat, open hat, rimshot, clap, and texture, then enable note reception.</p>
+          </article>
+        </div>
+        <div class="doc-links">
+          <a href="https://github.com/nrobin24/signal-rack#digitone-setup">FULL DIGITONE SETUP →</a>
+          <a href="https://github.com/nrobin24/signal-rack#digitakt-setup">FULL DIGITAKT SETUP →</a>
+          <a href="https://github.com/nrobin24/signal-rack#run-it">BUILD FROM SOURCE →</a>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <strong>SIGNAL RACK</strong>
+      <span>TAURI / RUST / REACT / MIDI</span>
+      <a href="https://github.com/nrobin24/signal-rack">GITHUB ↗</a>
+    </footer>
+  </body>
+</html>
