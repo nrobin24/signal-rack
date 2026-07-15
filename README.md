@@ -9,6 +9,12 @@ The rack currently contains four top-level modules:
 - **Digitone** provides bass, chord/vamp, and puncture lanes with editable notes, timing, probability, scenes, and sound macros.
 - **Digitakt** provides seven rhythm voices—kick, snare, closed hat, open hat, rimshot, clap, and texture—with editable trigs, timing feel, channels, and mutes.
 
+## Download
+
+Prebuilt installers are available from [GitHub Releases](https://github.com/nrobin24/signal-rack/releases). Choose the Windows setup executable, Apple Silicon DMG, or Intel Mac DMG for the destination computer.
+
+These early builds are unsigned, so Windows SmartScreen or macOS Gatekeeper may ask for confirmation before opening them. Signal Rack has been developed and hardware-tested on macOS; Windows builds use the same cross-platform MIDI backend but should still be considered early testing releases.
+
 ## Run it
 
 ```bash
@@ -17,7 +23,7 @@ npm run test:e2e:install
 npm run dev
 ```
 
-The first run compiles the Rust backend and opens the native Tauri window. Signal Rack requires Node.js, the stable Rust toolchain, and the Xcode command-line tools on macOS.
+The first run compiles the Rust backend and opens the native Tauri window. Development requires Node.js and the stable Rust toolchain, plus the platform prerequisites documented by Tauri. macOS development also requires the Xcode command-line tools.
 
 Useful development commands:
 
@@ -30,6 +36,8 @@ npm run midi:ports   # Native CoreMIDI output scan
 npm run clock:bench -- 132 6 # Measure the native clock scheduler at 132 BPM for 6 seconds
 npm run build        # Production macOS .app bundle
 ```
+
+Pushing a version tag such as `v0.4.0` runs the release workflow for Windows x64, Apple Silicon macOS, and Intel macOS. The resulting installers are collected in a draft GitHub Release for final inspection before publishing.
 
 The Playwright E2E suite runs the real React interface against a mock of the Tauri command boundary, so it never sends notes to connected hardware. Rust unit tests cover generation, groove timing, LFO waveforms, clock periods, and value clamping. Use `npm run midi:ports` and the native development window for hardware validation; the browser preview alone does not exercise CoreMIDI. Production builds are written to `src-tauri/target/release/bundle/macos/Signal Rack.app`.
 

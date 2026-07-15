@@ -1,0 +1,66 @@
+name: Release desktop installers
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Windows x64
+            platform: windows-latest
+            args: --bundles nsis
+          - label: macOS Apple Silicon
+            platform: macos-latest
+            target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin --bundles dmg
+          - label: macOS Intel
+            platform: macos-latest
+            target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin --bundles dmg
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build and upload installers
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: Signal Rack v__VERSION__
+          releaseBody: |
+            Download the installer for your computer:
+
+            - Windows x64: use the `-setup.exe` file.
+            - Apple Silicon Mac: use the `aarch64` DMG.
+            - Intel Mac: use the `x64` DMG.
+
+            These early builds are unsigned and may show an operating-system security warning.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+          releaseAssetNamePattern: signal-rack_[version]_[platform]_[arch].[ext]
