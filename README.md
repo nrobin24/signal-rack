@@ -11,7 +11,7 @@ The rack currently contains four top-level modules:
 
 ## Download
 
-Prebuilt installers are available from [GitHub Releases](https://github.com/nrobin24/signal-rack/releases). Choose the Windows setup executable, Apple Silicon DMG, or Intel Mac DMG for the destination computer.
+Prebuilt installers are available from [GitHub Releases](https://github.com/nrobin24/signal-rack/releases). Choose the Windows setup executable or Apple Silicon DMG for the destination computer.
 
 These early builds are unsigned, so Windows SmartScreen or macOS Gatekeeper may ask for confirmation before opening them. Signal Rack has been developed and hardware-tested on macOS; Windows builds use the same cross-platform MIDI backend but should still be considered early testing releases.
 
@@ -37,7 +37,7 @@ npm run clock:bench -- 132 6 # Measure the native clock scheduler at 132 BPM for
 npm run build        # Production macOS .app bundle
 ```
 
-Pushing a version tag such as `v0.4.0` runs the release workflow for Windows x64, Apple Silicon macOS, and Intel macOS. The resulting installers are collected in a draft GitHub Release for final inspection before publishing.
+Pushing a version tag such as `v0.4.0` runs the release workflow for Windows x64 and Apple Silicon macOS. The resulting installers are collected in a draft GitHub Release for final inspection before publishing.
 
 The Playwright E2E suite runs the real React interface against a mock of the Tauri command boundary, so it never sends notes to connected hardware. Rust unit tests cover generation, groove timing, LFO waveforms, clock periods, and value clamping. Use `npm run midi:ports` and the native development window for hardware validation; the browser preview alone does not exercise CoreMIDI. Production builds are written to `src-tauri/target/release/bundle/macos/Signal Rack.app`.
 

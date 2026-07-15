@@ -23,10 +23,6 @@ jobs:
             platform: macos-latest
             target: aarch64-apple-darwin
             args: --target aarch64-apple-darwin --bundles dmg
-          - label: macOS Intel
-            platform: macos-latest
-            target: x86_64-apple-darwin
-            args: --target x86_64-apple-darwin --bundles dmg
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -57,7 +53,6 @@ jobs:
 
             - Windows x64: use the file ending in `windows_x64.exe`.
             - Apple Silicon Mac: use the `aarch64` DMG.
-            - Intel Mac: use the `x64` DMG.
 
             These early builds are unsigned and may show an operating-system security warning.
           releaseDraft: true
