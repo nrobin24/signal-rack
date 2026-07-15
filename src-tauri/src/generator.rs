@@ -1386,9 +1386,8 @@ mod tests {
         assert_eq!(decoded.leader, PhraseLeader::Bass);
         assert_eq!(decoded.cycle_mode, CycleMode::Auto);
 
-        let legacy: RhythmConcept = serde_json::from_str("\"ukbass\"").unwrap();
-        assert_eq!(legacy, RhythmConcept::UkBass);
-        assert_eq!(serde_json::to_value(legacy).unwrap(), "uk-bass");
+        assert_eq!(serde_json::to_value(decoded.rhythm).unwrap(), "uk-bass");
+        assert!(serde_json::from_str::<RhythmConcept>("\"ukbass\"").is_err());
 
         let encoded = serde_json::to_value(generate_seed(&decoded, 3)).unwrap();
         assert_eq!(encoded["tracks"][0]["id"], "dn-bass");
