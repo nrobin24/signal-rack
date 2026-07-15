@@ -15,7 +15,8 @@
     "test:e2e:install": "playwright install chromium",
     "test": "npm run test:rust && npm run test:e2e",
     "check": "npm run typecheck && npm run check:rust && npm run web:build",
-    "midi:ports": "cargo run --quiet --manifest-path src-tauri/Cargo.toml --bin signal-rack-cli -- ports"
+    "midi:ports": "cargo run --quiet --manifest-path src-tauri/Cargo.toml --bin signal-rack-cli -- ports",
+    "clock:bench": "cargo run --quiet --release --manifest-path src-tauri/Cargo.toml --bin signal-rack-cli -- clock-bench"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",

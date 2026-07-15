@@ -27,6 +27,7 @@ npm run check        # TypeScript, Rust, and frontend production checks
 npm test             # Rust unit tests + browser E2E command-boundary test
 npm run test:e2e:install # One-time Chromium install for the E2E suite
 npm run midi:ports   # Native CoreMIDI output scan
+npm run clock:bench -- 132 6 # Measure the native clock scheduler at 132 BPM for 6 seconds
 npm run build        # Production macOS .app bundle
 ```
 
@@ -40,13 +41,15 @@ The frontend sends typed Tauri commands for output discovery and selection, rack
 
 The native engine provides:
 
-- A 24-PPQN MIDI clock and synchronized transport messages.
-- Per-lane length, groove offsets, probability, velocity, gate scheduling, mutes, and note releases.
+- A drift-free, absolute-deadline 24-PPQN MIDI clock with precision sleeping and synchronized transport messages.
+- Tempo-relative per-lane groove offsets, probability, velocity, gate scheduling, mutes, and note releases.
 - Shared-port or separate-port Digitone/Digitakt routing through CoreMIDI.
 - Digitone Tone/Space NRPN macros and clocked Global LFO modulation.
 - Deterministic Seed Lab harmony, motif, and rhythm generation for all ten lanes.
 
 The command boundary lives in `src/renderer/src/backend.ts`; Rust modules live in `src-tauri/src`. Electron, its preload bridge, the Node MIDI dependency, and the TypeScript generator/LFO engines are no longer part of the application.
+
+The four lane feels preserve the same musical displacement as tempo changes: **Straight** stays on the grid, **Push** moves selected offbeats early, **Late** places selected offbeats behind the grid, and **Broken** alternates late/early/late over each four-step group. MIDI clock messages always take priority over scheduled note, UI, and modulation work.
 
 ## Seed Lab
 
@@ -59,13 +62,13 @@ Repeated presses keep the direction but create small deterministic mutations. Th
 
 ## Global LFOs
 
-Each of the four LFOs has a selectable shape, clock-synced time, and bipolar depth. Shapes include sine, triangle, square, rising and falling ramps, and sample-and-hold. Times range from a quarter note through 32 bars and restart with the transport.
+Each of the four LFOs has a selectable shape, clock-synced time, and a live bipolar level meter. Shapes include sine, triangle, square, rising and falling ramps, and sample-and-hold. Times range from a quarter note through 32 bars and restart with the transport.
 
-Supported instrument parameters have a modulation-source selector beside their manual control. Choose `LFO 1`–`LFO 4`, or `MANUAL` to disconnect modulation. The manual value stays as the center point and the LFO depth determines how far the parameter moves around it, clamped to the MIDI range.
+Supported instrument parameters have a modulation-source selector beside their manual control. Choose `LFO 1`–`LFO 4`, or `MANUAL` to disconnect modulation. The manual value remains an editable baseline; every routed parameter gets its own signed depth, current value readout, and motion indicator. Values update once per sequencer step and are clamped to the MIDI range.
 
 ## Digitone setup
 
-Select the Digitone output in its module, then configure synth tracks 1–3 to match the displayed MIDI channels. Defaults are channels 1, 2, and 3.
+Select the Digitone output and configure synth tracks 1–3 in the compact routing panel at the top of the module. Defaults are channels 1, 2, and 3. The prominent module mute silences all three tracks while preserving their individual mute states.
 
 For `TONE` and `SPACE`, enable `MIDI CONFIG > PORT CONFIG > RECEIVE CC/NRPN`. `TONE` moves filter frequency and FM feedback; `SPACE` moves delay and reverb sends using documented Digitone NRPN messages. Either macro can be routed independently to one of the four Global LFOs.
 
@@ -75,9 +78,11 @@ Digitone scenes currently control only the three Digitone roles. The Scene Lens 
 
 ## Digitakt setup
 
-Load appropriate Sounds on Digitakt audio tracks 1–7 in this order: kick, snare, closed hat, open hat, rimshot, clap, and texture. Select the Digitakt output in its module and match those tracks to MIDI channels 1–7, or change the channel selectors in Signal Rack.
+Load appropriate Sounds on Digitakt audio tracks 1–7 in this order: kick, snare, closed hat, open hat, rimshot, clap, and texture. Select the Digitakt output and match channels 1–7 in the module's compact routing panel. The module mute silences the complete drum instrument without changing lane mutes.
 
 Enable `MIDI CONFIG > PORT CONFIG > RECEIVE NOTES`. Signal Rack sends MIDI note 60 to each track channel, which plays the loaded Sound at its base pitch. It sequences the Sounds already loaded on the hardware; it does not transfer samples or replace the Digitakt project.
+
+Each drum pad has two separate actions: click the large numbered surface to place/remove the trig, or click the small **EDIT** strip to select it without changing its state. The compact Trig Editor then controls on/off state, velocity, gate, and probability for that step.
 
 ## Current scope
 

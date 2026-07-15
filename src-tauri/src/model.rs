@@ -103,7 +103,6 @@ pub struct LfoConfig {
     pub id: LfoId,
     pub shape: LfoShape,
     pub period: LfoPeriod,
-    pub depth: f64,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -128,6 +127,10 @@ pub struct TrackConfig {
     pub space: Option<f64>,
     pub tone_lfo: Option<LfoId>,
     pub space_lfo: Option<LfoId>,
+    #[serde(default)]
+    pub tone_lfo_depth: f64,
+    #[serde(default)]
+    pub space_lfo_depth: f64,
     pub steps: Vec<Step>,
 }
 

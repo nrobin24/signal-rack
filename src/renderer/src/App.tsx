@@ -32,6 +32,7 @@ type DigitaktTrack = TrackConfig & {
   color: Color
 }
 type SelectedStep = { trackId: DigitoneTrackId; index: number }
+type SelectedDrumStep = { trackId: DigitaktTrackId; index: number }
 type OutputSelection = Record<RackTarget, number | null>
 
 const defaultSteps = (notes: Array<number[] | null>, velocity = 100, gate = 66, probability = 100): Step[] =>
@@ -66,10 +67,10 @@ const initialDigitaktTracks: DigitaktTrack[] = [
 ]
 
 const initialLfos: LfoConfig[] = [
-  { id: 'lfo-1', shape: 'sine', period: 'bar-1', depth: 18 },
-  { id: 'lfo-2', shape: 'triangle', period: 'bars-2', depth: 24 },
-  { id: 'lfo-3', shape: 'square', period: 'bars-4', depth: 12 },
-  { id: 'lfo-4', shape: 'random', period: 'bars-8', depth: 20 }
+  { id: 'lfo-1', shape: 'sine', period: 'bar-1' },
+  { id: 'lfo-2', shape: 'triangle', period: 'bars-2' },
+  { id: 'lfo-3', shape: 'square', period: 'bars-4' },
+  { id: 'lfo-4', shape: 'random', period: 'bars-8' }
 ]
 
 const lfoShapeLabels: Record<LfoShape, string> = {
@@ -89,11 +90,14 @@ export default function App(): React.JSX.Element {
   const [selectedOutputs, setSelectedOutputs] = useState<OutputSelection>({ digitone: null, digitakt: null })
   const [playing, setPlaying] = useState(false)
   const [currentSteps, setCurrentSteps] = useState<Partial<Record<TrackId, number>>>({})
+  const [lfoLevels, setLfoLevels] = useState<Record<LfoId, number>>({ 'lfo-1': 0, 'lfo-2': 0, 'lfo-3': 0, 'lfo-4': 0 })
   const [digitoneTracks, setDigitoneTracks] = useState<DigitoneTrack[]>(initialDigitoneTracks)
   const [digitaktTracks, setDigitaktTracks] = useState<DigitaktTrack[]>(initialDigitaktTracks)
+  const [instrumentMutes, setInstrumentMutes] = useState<Record<RackTarget, boolean>>({ digitone: false, digitakt: false })
   const [lfos, setLfos] = useState<LfoConfig[]>(initialLfos)
   const [scene, setScene] = useState<SceneId>('full')
   const [selectedStep, setSelectedStep] = useState<SelectedStep>({ trackId: 'dn-bass', index: 0 })
+  const [selectedDrumStep, setSelectedDrumStep] = useState<SelectedDrumStep>({ trackId: 'dk-kick', index: 0 })
   const [seedSettings, setSeedSettings] = useState<SeedSettings>({ root: 2, harmony: 'dorian', bassRole: 'anchor', rhythm: 'broken', energy: 'medium' })
   const [seedCount, setSeedCount] = useState(0)
   const [lastSeed, setLastSeed] = useState('D · Dorian smoke · Broken pocket · Anchor bass · medium energy')
@@ -101,10 +105,12 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     let disposed = false
     let unsubscribeStep: (() => void) | undefined
+    let unsubscribeLfo: (() => void) | undefined
     let unsubscribeStop: (() => void) | undefined
-    void Promise.all([backend.listOutputs(), backend.getStatus(), backend.onStep((steps) => setCurrentSteps(steps)), backend.onStopped(() => { setPlaying(false); setCurrentSteps({}) })]).then(([nextOutputs, status, nextUnsubscribeStep, nextUnsubscribeStop]) => {
-      if (disposed) { nextUnsubscribeStep(); nextUnsubscribeStop(); return }
+    void Promise.all([backend.listOutputs(), backend.getStatus(), backend.onStep((steps) => setCurrentSteps(steps)), backend.onLfoLevels((levels) => setLfoLevels(levels)), backend.onStopped(() => { setPlaying(false); setCurrentSteps({}); setLfoLevels({ 'lfo-1': 0, 'lfo-2': 0, 'lfo-3': 0, 'lfo-4': 0 }) })]).then(([nextOutputs, status, nextUnsubscribeStep, nextUnsubscribeLfo, nextUnsubscribeStop]) => {
+      if (disposed) { nextUnsubscribeStep(); nextUnsubscribeLfo(); nextUnsubscribeStop(); return }
       unsubscribeStep = nextUnsubscribeStep
+      unsubscribeLfo = nextUnsubscribeLfo
       unsubscribeStop = nextUnsubscribeStop
       setOutputs(nextOutputs)
       setSelectedOutputs({
@@ -113,16 +119,16 @@ export default function App(): React.JSX.Element {
       })
       setPlaying(status.playing)
     }).catch(console.error)
-    return () => { disposed = true; unsubscribeStep?.(); unsubscribeStop?.() }
+    return () => { disposed = true; unsubscribeStep?.(); unsubscribeLfo?.(); unsubscribeStop?.() }
   }, [])
 
-  function config(nextDigitone = digitoneTracks, nextDigitakt = digitaktTracks, nextScene = scene, nextBpm = bpm, nextLfos = lfos): SequencerConfig {
-    const digitoneConfig: TrackConfig[] = nextDigitone.map(({ id, channel, octave, length, groove, muted, tone, space, toneLfo, spaceLfo, steps }) => ({
-      id, target: 'digitone', channel, length, groove, muted, tone, space, toneLfo, spaceLfo,
+  function config(nextDigitone = digitoneTracks, nextDigitakt = digitaktTracks, nextScene = scene, nextBpm = bpm, nextLfos = lfos, nextInstrumentMutes = instrumentMutes): SequencerConfig {
+    const digitoneConfig: TrackConfig[] = nextDigitone.map(({ id, channel, octave, length, groove, muted, tone, space, toneLfo, spaceLfo, toneLfoDepth, spaceLfoDepth, steps }) => ({
+      id, target: 'digitone', channel, length, groove, muted: muted || nextInstrumentMutes.digitone, tone, space, toneLfo, spaceLfo, toneLfoDepth, spaceLfoDepth,
       steps: steps.map((step) => ({ ...step, notes: step.notes.map((note) => clampNote(note + octave * 12)) }))
     }))
     const digitaktConfig: TrackConfig[] = nextDigitakt.map(({ id, channel, length, groove, muted, steps }) => ({
-      id, target: 'digitakt', channel, length, groove, muted, steps
+      id, target: 'digitakt', channel, length, groove, muted: muted || nextInstrumentMutes.digitakt, steps
     }))
     return { bpm: nextBpm, scene: nextScene, lfos: nextLfos, tracks: [...digitoneConfig, ...digitaktConfig] }
   }
@@ -201,10 +207,22 @@ export default function App(): React.JSX.Element {
     const current = digitoneTracks.find((track) => track.id === trackId)
     if (!current) return
     const routeKey = macro === 'tone' ? 'toneLfo' : 'spaceLfo'
-    const nextTrack = { ...current, [routeKey]: source === 'manual' ? undefined : source }
+    const depthKey = macro === 'tone' ? 'toneLfoDepth' : 'spaceLfoDepth'
+    const nextTrack = { ...current, [routeKey]: source === 'manual' ? undefined : source, [depthKey]: current[depthKey] ?? 18 }
     const nextTracks = digitoneTracks.map((track) => track.id === trackId ? nextTrack : track)
     setDigitoneTracks(nextTracks)
     void backend.configure(config(nextTracks)).then(() => backend.setMacros(trackId, nextTrack.tone, nextTrack.space))
+  }
+
+  function changeMacroDepth(trackId: DigitoneTrackId, macro: 'tone' | 'space', depth: number): void {
+    const depthKey = macro === 'tone' ? 'toneLfoDepth' : 'spaceLfoDepth'
+    updateDigitoneTrack(trackId, (track) => ({ ...track, [depthKey]: depth }))
+  }
+
+  function toggleInstrumentMute(target: RackTarget): void {
+    const next = { ...instrumentMutes, [target]: !instrumentMutes[target] }
+    setInstrumentMutes(next)
+    void backend.configure(config(digitoneTracks, digitaktTracks, scene, bpm, lfos, next))
   }
 
   function updateLfo(id: LfoId, change: (lfo: LfoConfig) => LfoConfig): void {
@@ -237,6 +255,8 @@ export default function App(): React.JSX.Element {
 
   const selectedTrack = digitoneTracks.find((track) => track.id === selectedStep.trackId) ?? digitoneTracks[0]
   const selected = selectedTrack.steps[selectedStep.index]
+  const selectedDrumTrack = digitaktTracks.find((track) => track.id === selectedDrumStep.trackId) ?? digitaktTracks[0]
+  const selectedDrum = selectedDrumTrack.steps[selectedDrumStep.index]
   const armedCount = Number(selectedOutputs.digitone !== null) + Number(selectedOutputs.digitakt !== null)
 
   return <main className="app-shell">
@@ -253,13 +273,14 @@ export default function App(): React.JSX.Element {
     <section className="rack rack-stack">
       <SeedLab settings={seedSettings} onSettings={setSeedSettings} onSeed={seedRack} lastSeed={lastSeed} seedCount={seedCount} />
 
-      <LfoRack lfos={lfos} onChange={updateLfo} />
+      <LfoRack lfos={lfos} levels={lfoLevels} onChange={updateLfo} />
 
-      <RackFrame className="digitone-module">
+      <RackFrame className={`digitone-module instrument-module ${instrumentMutes.digitone ? 'module-muted' : ''}`}>
         <div className="unit-heading">
           <div><span className="unit-type">INSTRUMENT MODULE 01</span><h1>DIGITONE <em>STABLE PULSE / DISRUPTED SURFACE</em></h1></div>
-          <ModuleOutput target="digitone" outputs={outputs} selected={selectedOutputs.digitone} onSelect={selectModuleOutput} />
+          <ModuleSetup target="digitone" outputs={outputs} selected={selectedOutputs.digitone} tracks={digitoneTracks} muted={instrumentMutes.digitone} onSelect={selectModuleOutput} onMute={() => toggleInstrumentMute('digitone')} onChannel={(trackId, channel) => updateDigitoneTrack(trackId as DigitoneTrackId, (track) => ({ ...track, channel }))} />
         </div>
+        <div className="module-body">
         <p className="hint">Three melodic roles share one harmonic seed, but keep independent lengths, timing, probability, and live sound macros.</p>
 
         <section className="scene-strip" aria-label="Arrangement scenes">
@@ -269,20 +290,24 @@ export default function App(): React.JSX.Element {
         </section>
 
         <div className="lanes">
-          {digitoneTracks.map((track) => <DigitoneLane key={track.id} track={track} selected={selectedStep.trackId === track.id ? selectedStep.index : null} currentStep={currentSteps[track.id] ?? null} onSelect={(index) => setSelectedStep({ trackId: track.id, index })} onChange={(change) => updateDigitoneTrack(track.id, change)} onMacro={(macro, value) => changeMacro(track.id, macro, value)} onMacroRoute={(macro, source) => changeMacroRoute(track.id, macro, source)} />)}
+          {digitoneTracks.map((track) => <DigitoneLane key={track.id} track={track} selected={selectedStep.trackId === track.id ? selectedStep.index : null} currentStep={currentSteps[track.id] ?? null} lfoLevels={lfoLevels} onSelect={(index) => setSelectedStep({ trackId: track.id, index })} onChange={(change) => updateDigitoneTrack(track.id, change)} onMacro={(macro, value) => changeMacro(track.id, macro, value)} onMacroRoute={(macro, source) => changeMacroRoute(track.id, macro, source)} onMacroDepth={(macro, depth) => changeMacroDepth(track.id, macro, depth)} />)}
         </div>
 
         <StepEditor track={selectedTrack} index={selectedStep.index} step={selected} onChange={(change) => updateDigitoneTrack(selectedTrack.id, (track) => ({ ...track, steps: track.steps.map((step, index) => index === selectedStep.index ? change(step) : step) }))} />
+        </div>
       </RackFrame>
 
-      <RackFrame className="digitakt-module">
+      <RackFrame className={`digitakt-module instrument-module ${instrumentMutes.digitakt ? 'module-muted' : ''}`}>
         <div className="unit-heading">
           <div><span className="unit-type">INSTRUMENT MODULE 02</span><h1>DIGITAKT <em>RHYTHM ARCHITECTURE</em></h1></div>
-          <ModuleOutput target="digitakt" outputs={outputs} selected={selectedOutputs.digitakt} onSelect={selectModuleOutput} />
+          <ModuleSetup target="digitakt" outputs={outputs} selected={selectedOutputs.digitakt} tracks={digitaktTracks} muted={instrumentMutes.digitakt} onSelect={selectModuleOutput} onMute={() => toggleInstrumentMute('digitakt')} onChannel={(trackId, channel) => updateDigitaktTrack(trackId as DigitaktTrackId, (track) => ({ ...track, channel }))} />
         </div>
-        <p className="hint">Load Sounds on Digitakt tracks 1–7 and match their MIDI channels: kick, snare, closed hat, open hat, rimshot, clap, and texture. Click steps to toggle trigs.</p>
+        <div className="module-body">
+        <p className="hint">The large pad surface turns a trig on or off. Use its EDIT strip to select the step without changing it, then shape velocity, gate, and chance below.</p>
         <div className="drum-lanes">
-          {digitaktTracks.map((track) => <DigitaktLane key={track.id} track={track} currentStep={currentSteps[track.id] ?? null} onChange={(change) => updateDigitaktTrack(track.id, change)} />)}
+          {digitaktTracks.map((track) => <DigitaktLane key={track.id} track={track} selected={selectedDrumStep.trackId === track.id ? selectedDrumStep.index : null} currentStep={currentSteps[track.id] ?? null} onSelect={(index) => setSelectedDrumStep({ trackId: track.id, index })} onChange={(change) => updateDigitaktTrack(track.id, change)} />)}
+        </div>
+        <DrumStepEditor track={selectedDrumTrack} index={selectedDrumStep.index} step={selectedDrum} onChange={(change) => updateDigitaktTrack(selectedDrumTrack.id, (track) => ({ ...track, steps: track.steps.map((step, index) => index === selectedDrumStep.index ? change(step) : step) }))} />
         </div>
       </RackFrame>
     </section>
@@ -310,7 +335,7 @@ function SeedLab({ settings, onSettings, onSeed, lastSeed, seedCount }: { settin
   </RackFrame>
 }
 
-function LfoRack({ lfos, onChange }: { lfos: LfoConfig[]; onChange: (id: LfoId, change: (lfo: LfoConfig) => LfoConfig) => void }): React.JSX.Element {
+function LfoRack({ lfos, levels, onChange }: { lfos: LfoConfig[]; levels: Record<LfoId, number>; onChange: (id: LfoId, change: (lfo: LfoConfig) => LfoConfig) => void }): React.JSX.Element {
   return <RackFrame className="lfo-module">
     <div className="unit-heading">
       <div><span className="unit-type">MODULATION SOURCE MODULE 00</span><h1>GLOBAL LFOs <em>CLOCKED MOVEMENT FOR THE WHOLE RACK</em></h1></div>
@@ -320,9 +345,9 @@ function LfoRack({ lfos, onChange }: { lfos: LfoConfig[]; onChange: (id: LfoId, 
     <div className="lfo-grid">
       {lfos.map((lfo, index) => <section className="lfo-card" key={lfo.id}>
         <div className="lfo-title"><span>LFO {index + 1}</span><strong>{shapeGlyph(lfo.shape)}</strong></div>
+        <div className="lfo-monitor" role="meter" aria-label={`LFO ${index + 1} current level`} aria-valuemin={-1} aria-valuemax={1} aria-valuenow={levels[lfo.id]}><i className="negative" style={{ width: `${Math.max(0, -levels[lfo.id]) * 50}%` }} /><b style={{ left: `${(levels[lfo.id] + 1) * 50}%` }} /><i className="positive" style={{ width: `${Math.max(0, levels[lfo.id]) * 50}%` }} /></div>
         <label>SHAPE<select aria-label={`LFO ${index + 1} shape`} value={lfo.shape} onChange={(event) => onChange(lfo.id, (current) => ({ ...current, shape: event.target.value as LfoShape }))}>{entries(lfoShapeLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
         <label>TIME<select aria-label={`LFO ${index + 1} time`} value={lfo.period} onChange={(event) => onChange(lfo.id, (current) => ({ ...current, period: event.target.value as LfoPeriod }))}>{entries(lfoPeriodLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
-        <label className="lfo-depth"><span>DEPTH</span><input aria-label={`LFO ${index + 1} depth`} type="range" min="0" max="63" value={lfo.depth} onChange={(event) => onChange(lfo.id, (current) => ({ ...current, depth: Number(event.target.value) }))} /><output>±{lfo.depth}</output></label>
       </section>)}
     </div>
   </RackFrame>
@@ -332,8 +357,14 @@ function RackFrame({ children, className }: { children: React.ReactNode; classNa
   return <article className={`rack-unit ${className}`}><div className="rack-ear left">●<br />●<br />●</div><div className="unit-face">{children}</div><div className="rack-ear right">●<br />●<br />●</div></article>
 }
 
-function ModuleOutput({ target, outputs, selected, onSelect }: { target: RackTarget; outputs: string[]; selected: number | null; onSelect: (target: RackTarget, port: number | null) => Promise<void> }): React.JSX.Element {
-  return <label className="module-output">MIDI OUT<select value={selected ?? ''} onChange={(event) => void onSelect(target, event.target.value === '' ? null : Number(event.target.value))}><option value="">Select {target === 'digitone' ? 'Digitone' : 'Digitakt'}…</option>{outputs.map((name, index) => <option value={index} key={`${name}-${index}`}>{name}</option>)}</select><small>{selected === null ? 'DISCONNECTED' : 'ARMED'}</small></label>
+function ModuleSetup({ target, outputs, selected, tracks, muted, onSelect, onMute, onChannel }: { target: RackTarget; outputs: string[]; selected: number | null; tracks: Array<{ id: TrackId; label: string; channel: number }>; muted: boolean; onSelect: (target: RackTarget, port: number | null) => Promise<void>; onMute: () => void; onChannel: (trackId: TrackId, channel: number) => void }): React.JSX.Element {
+  return <div className="module-setup">
+    <div className="module-routing">
+      <label className="module-output">MIDI OUT<select value={selected ?? ''} onChange={(event) => void onSelect(target, event.target.value === '' ? null : Number(event.target.value))}><option value="">Select {target === 'digitone' ? 'Digitone' : 'Digitakt'}…</option>{outputs.map((name, index) => <option value={index} key={`${name}-${index}`}>{name}</option>)}</select><small>{selected === null ? 'DISCONNECTED' : 'ARMED'}</small></label>
+      <div className="channel-bank" aria-label={`${target} MIDI channels`}>{tracks.map((track) => <label key={track.id} title={track.label}><span>{track.label.replace(/^T(\d+) \/.*/, 'T$1')}</span><select aria-label={`${track.label} MIDI channel`} value={track.channel} onChange={(event) => onChannel(track.id, Number(event.target.value))}>{channelOptions()}</select></label>)}</div>
+    </div>
+    <button className={`instrument-mute ${muted ? 'engaged' : ''}`} aria-pressed={muted} onClick={onMute}><span>{muted ? 'MUTED' : 'LIVE'}</span><strong>{muted ? 'UNMUTE' : 'MUTE ALL'}</strong></button>
+  </div>
 }
 
 function SceneLens({ scene }: { scene: SceneId }): React.JSX.Element {
@@ -342,29 +373,31 @@ function SceneLens({ scene }: { scene: SceneId }): React.JSX.Element {
   </div>
 }
 
-function DigitoneLane({ track, selected, currentStep, onSelect, onChange, onMacro, onMacroRoute }: { track: DigitoneTrack; selected: number | null; currentStep: number | null; onSelect: (index: number) => void; onChange: (change: (track: DigitoneTrack) => DigitoneTrack) => void; onMacro: (macro: 'tone' | 'space', value: number) => void; onMacroRoute: (macro: 'tone' | 'space', source: LfoId | 'manual') => void }): React.JSX.Element {
+function DigitoneLane({ track, selected, currentStep, lfoLevels, onSelect, onChange, onMacro, onMacroRoute, onMacroDepth }: { track: DigitoneTrack; selected: number | null; currentStep: number | null; lfoLevels: Record<LfoId, number>; onSelect: (index: number) => void; onChange: (change: (track: DigitoneTrack) => DigitoneTrack) => void; onMacro: (macro: 'tone' | 'space', value: number) => void; onMacroRoute: (macro: 'tone' | 'space', source: LfoId | 'manual') => void; onMacroDepth: (macro: 'tone' | 'space', depth: number) => void }): React.JSX.Element {
   return <section className={`lane ${track.color}`}>
     <div className="lane-label">
       <LaneTitle label={track.label} muted={track.muted} onMute={() => onChange((value) => ({ ...value, muted: !value.muted }))} />
-      <div className="channel-row"><label>CH<select value={track.channel} onChange={(event) => onChange((value) => ({ ...value, channel: Number(event.target.value) }))}>{channelOptions()}</select></label><label>LEN<select value={track.length} onChange={(event) => onChange((value) => ({ ...value, length: Number(event.target.value) }))}>{[8, 10, 12, 14, 16].map((length) => <option key={length} value={length}>{length}</option>)}</select></label></div>
-      <label className="groove">FEEL<select value={track.groove} onChange={(event) => onChange((value) => ({ ...value, groove: event.target.value as Groove }))}>{grooveOptions()}</select></label>
-      <div className="octave-controls"><button disabled={track.octave === -2} onClick={() => onChange((value) => ({ ...value, octave: value.octave - 1 }))}>−</button><strong>{track.octave > 0 ? `+${track.octave}` : track.octave}</strong><button disabled={track.octave === 4} onClick={() => onChange((value) => ({ ...value, octave: value.octave + 1 }))}>+</button><small>OCT</small></div>
+      <div className="lane-performance"><label>LEN<select value={track.length} onChange={(event) => onChange((value) => ({ ...value, length: Number(event.target.value) }))}>{[8, 10, 12, 14, 16].map((length) => <option key={length} value={length}>{length}</option>)}</select></label><label>FEEL<select value={track.groove} onChange={(event) => onChange((value) => ({ ...value, groove: event.target.value as Groove }))}>{grooveOptions()}</select></label></div>
+      <div className="octave-controls"><small>OCTAVE</small><button disabled={track.octave === -2} onClick={() => onChange((value) => ({ ...value, octave: value.octave - 1 }))}>−</button><strong>{track.octave > 0 ? `+${track.octave}` : track.octave}</strong><button disabled={track.octave === 4} onClick={() => onChange((value) => ({ ...value, octave: value.octave + 1 }))}>+</button></div>
     </div>
     <div className="step-grid">
       {track.steps.map((step, index) => <button type="button" className={`step ${currentStep === index ? 'active' : ''} ${step.notes.length === 0 ? 'empty' : ''} ${index >= track.length ? 'outside-cycle' : ''} ${selected === index ? 'selected' : ''}`} key={index} onClick={() => onSelect(index)}><span>{String(index + 1).padStart(2, '0')}</span><strong>{step.notes.length ? step.notes.map((note) => noteName(clampNote(note + track.octave * 12))).join(' ') : '—'}</strong><small>{step.notes.length ? `${step.velocity} · ${step.gate}%` : 'REST'}</small></button>)}
     </div>
-    <div className="macros"><Macro label="TONE" value={track.tone} source={track.toneLfo ?? 'manual'} routeLabel={`${track.shortLabel} Tone modulation source`} onChange={(value) => onMacro('tone', value)} onSource={(source) => onMacroRoute('tone', source)} /><Macro label="SPACE" value={track.space} source={track.spaceLfo ?? 'manual'} routeLabel={`${track.shortLabel} Space modulation source`} onChange={(value) => onMacro('space', value)} onSource={(source) => onMacroRoute('space', source)} /></div>
+    <div className="macros"><Macro label="TONE" value={track.tone} source={track.toneLfo ?? 'manual'} depth={track.toneLfoDepth ?? 18} lfoLevel={track.toneLfo ? lfoLevels[track.toneLfo] : 0} routeLabel={`${track.shortLabel} Tone modulation source`} onChange={(value) => onMacro('tone', value)} onSource={(source) => onMacroRoute('tone', source)} onDepth={(depth) => onMacroDepth('tone', depth)} /><Macro label="SPACE" value={track.space} source={track.spaceLfo ?? 'manual'} depth={track.spaceLfoDepth ?? 18} lfoLevel={track.spaceLfo ? lfoLevels[track.spaceLfo] : 0} routeLabel={`${track.shortLabel} Space modulation source`} onChange={(value) => onMacro('space', value)} onSource={(source) => onMacroRoute('space', source)} onDepth={(depth) => onMacroDepth('space', depth)} /></div>
   </section>
 }
 
-function DigitaktLane({ track, currentStep, onChange }: { track: DigitaktTrack; currentStep: number | null; onChange: (change: (track: DigitaktTrack) => DigitaktTrack) => void }): React.JSX.Element {
+function DigitaktLane({ track, selected, currentStep, onSelect, onChange }: { track: DigitaktTrack; selected: number | null; currentStep: number | null; onSelect: (index: number) => void; onChange: (change: (track: DigitaktTrack) => DigitaktTrack) => void }): React.JSX.Element {
   const toggleStep = (index: number): void => onChange((current) => ({
     ...current,
     steps: current.steps.map((step, stepIndex) => stepIndex === index ? { ...step, notes: step.notes.length ? [] : [60], velocity: step.velocity || 100 } : step)
   }))
   return <section className={`drum-lane ${track.color}`}>
-    <div className="drum-label"><LaneTitle label={track.label} muted={track.muted} onMute={() => onChange((value) => ({ ...value, muted: !value.muted }))} /><div><label>CH<select value={track.channel} onChange={(event) => onChange((value) => ({ ...value, channel: Number(event.target.value) }))}>{channelOptions()}</select></label><label>FEEL<select value={track.groove} onChange={(event) => onChange((value) => ({ ...value, groove: event.target.value as Groove }))}>{grooveOptions()}</select></label></div></div>
-    <div className="drum-grid">{track.steps.map((step, index) => <button key={index} className={`${step.notes.length ? 'hit' : ''} ${currentStep === index ? 'active' : ''}`} onClick={() => toggleStep(index)} title={`Step ${index + 1} · velocity ${step.velocity} · chance ${step.probability}%`}><span>{String(index + 1).padStart(2, '0')}</span><strong>{step.notes.length ? (step.velocity >= 112 ? '▲' : '●') : '·'}</strong><small>{step.notes.length ? step.probability : ''}</small></button>)}</div>
+    <div className="drum-label"><LaneTitle label={track.label} muted={track.muted} onMute={() => onChange((value) => ({ ...value, muted: !value.muted }))} /><div><label>FEEL<select value={track.groove} onChange={(event) => onChange((value) => ({ ...value, groove: event.target.value as Groove }))}>{grooveOptions()}</select></label></div></div>
+    <div className="drum-grid">{track.steps.map((step, index) => <div key={index} className={`drum-pad ${step.notes.length ? 'hit' : ''} ${currentStep === index ? 'active' : ''} ${selected === index ? 'selected' : ''}`}>
+      <button className="drum-trigger" onClick={() => toggleStep(index)} aria-label={`Toggle ${track.label} step ${index + 1} ${step.notes.length ? 'off' : 'on'}`} title={`${step.notes.length ? 'Turn off' : 'Turn on'} step ${index + 1}`}><span>{String(index + 1).padStart(2, '0')}</span><strong>{step.notes.length ? (step.velocity >= 112 ? '▲' : '●') : '·'}</strong><small>{step.notes.length ? `${step.velocity}/${step.probability}` : 'OFF'}</small></button>
+      <button className="drum-edit" onClick={() => onSelect(index)} aria-label={`Edit ${track.label} step ${index + 1}`}>{selected === index ? 'EDITING' : 'EDIT'}</button>
+    </div>)}</div>
   </section>
 }
 
@@ -372,8 +405,15 @@ function LaneTitle({ label, muted, onMute }: { label: string; muted: boolean; on
   return <div className="lane-title"><span>{label}</span><button className={`mute ${muted ? 'engaged' : ''}`} aria-pressed={muted} onClick={onMute}>{muted ? 'MUTED' : 'MUTE'}</button></div>
 }
 
-function Macro({ label, value, source, routeLabel, onChange, onSource }: { label: string; value: number; source: LfoId | 'manual'; routeLabel: string; onChange: (value: number) => void; onSource: (source: LfoId | 'manual') => void }): React.JSX.Element {
-  return <div className={`macro ${source === 'manual' ? '' : 'patched'}`}><div><span>{label}</span><output>{value}</output></div><input aria-label={`${routeLabel} center`} type="range" min="0" max="127" value={value} onChange={(event) => onChange(Number(event.target.value))} /><select aria-label={routeLabel} value={source} onChange={(event) => onSource(event.target.value as LfoId | 'manual')}><option value="manual">MANUAL</option>{(['lfo-1', 'lfo-2', 'lfo-3', 'lfo-4'] as LfoId[]).map((id, index) => <option value={id} key={id}>LFO {index + 1}</option>)}</select></div>
+function Macro({ label, value, source, depth, lfoLevel, routeLabel, onChange, onSource, onDepth }: { label: string; value: number; source: LfoId | 'manual'; depth: number; lfoLevel: number; routeLabel: string; onChange: (value: number) => void; onSource: (source: LfoId | 'manual') => void; onDepth: (depth: number) => void }): React.JSX.Element {
+  const current = Math.round(Math.max(0, Math.min(127, value + lfoLevel * depth)))
+  return <div className={`macro ${source === 'manual' ? '' : 'patched'}`}>
+    <div className="macro-readout"><span>{label}</span><output>{source === 'manual' ? value : `${value} → ${current}`}</output></div>
+    <input aria-label={`${routeLabel} baseline`} type="range" min="0" max="127" value={value} onChange={(event) => onChange(Number(event.target.value))} />
+    <select aria-label={routeLabel} value={source} onChange={(event) => onSource(event.target.value as LfoId | 'manual')}><option value="manual">MANUAL</option>{(['lfo-1', 'lfo-2', 'lfo-3', 'lfo-4'] as LfoId[]).map((id, index) => <option value={id} key={id}>LFO {index + 1}</option>)}</select>
+    {source !== 'manual' && <label className="macro-depth"><span>DEPTH</span><input aria-label={`${routeLabel} depth`} type="range" min="-63" max="63" value={depth} onChange={(event) => onDepth(Number(event.target.value))} /><output>{depth > 0 ? '+' : ''}{depth}</output></label>}
+    {source !== 'manual' && <div className="macro-motion" aria-hidden="true"><i style={{ left: `${current / 127 * 100}%` }} /><b style={{ left: `${value / 127 * 100}%` }} /></div>}
+  </div>
 }
 
 function StepEditor({ track, index, step, onChange }: { track: DigitoneTrack; index: number; step: Step; onChange: (change: (step: Step) => Step) => void }): React.JSX.Element {
@@ -394,6 +434,18 @@ function StepEditor({ track, index, step, onChange }: { track: DigitoneTrack; in
   </section>
 }
 
+function DrumStepEditor({ track, index, step, onChange }: { track: DigitaktTrack; index: number; step: Step; onChange: (change: (step: Step) => Step) => void }): React.JSX.Element {
+  const enabled = step.notes.length > 0
+  const shortLabel = track.label.replace(/^T\d+ \/ /, '')
+  return <section className={`drum-step-editor ${track.color}`}>
+    <div><span className="section-label">TRIG EDITOR</span><h2>{shortLabel} · STEP {String(index + 1).padStart(2, '0')}</h2></div>
+    <button className={`trig-state ${enabled ? 'enabled' : ''}`} aria-pressed={enabled} onClick={() => onChange((current) => ({ ...current, notes: enabled ? [] : [60] }))}><span>TRIG</span><strong>{enabled ? 'ON' : 'OFF'}</strong><small>click to {enabled ? 'remove' : 'place'}</small></button>
+    <ValueControl label="VELOCITY" value={step.velocity} min={1} max={127} onChange={(value) => onChange((current) => ({ ...current, velocity: value }))} />
+    <ValueControl label="GATE" value={step.gate} min={1} max={100} suffix="%" onChange={(value) => onChange((current) => ({ ...current, gate: value }))} />
+    <ValueControl label="CHANCE" value={step.probability} min={0} max={100} suffix="%" onChange={(value) => onChange((current) => ({ ...current, probability: value }))} />
+  </section>
+}
+
 function SeedSelect({ label, value, onChange, children }: { label: string; value: string | number; onChange: (value: string) => void; children: React.ReactNode }): React.JSX.Element {
   return <label className="seed-select"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{children}</select></label>
 }
@@ -408,7 +460,8 @@ function drumTrack(id: DigitaktTrackId, label: string, color: Color, channel: nu
 }
 
 function channelOptions(): React.JSX.Element[] { return Array.from({ length: 16 }, (_, index) => index + 1).map((channel) => <option key={channel} value={channel}>CH {channel}</option>) }
-function grooveOptions(): React.JSX.Element[] { return (['straight', 'push', 'late', 'broken'] as Groove[]).map((groove) => <option key={groove} value={groove}>{groove}</option>) }
+const grooveLabels: Record<Groove, string> = { straight: 'Straight', push: 'Push · early', late: 'Late · behind', broken: 'Broken · push/pull' }
+function grooveOptions(): React.JSX.Element[] { return (['straight', 'push', 'late', 'broken'] as Groove[]).map((groove) => <option key={groove} value={groove}>{grooveLabels[groove]}</option>) }
 function shapeGlyph(shape: LfoShape): string { return ({ sine: '∿', triangle: '△', square: '⊓', 'ramp-up': '↗', 'ramp-down': '↘', random: '⌁' })[shape] }
 function noteName(note: number): string { return ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'][note % 12] + (Math.floor(note / 12) - 1) }
 function formatNotes(notes: number[]): string { return notes.map(noteName).join(' ') }

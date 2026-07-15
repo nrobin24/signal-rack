@@ -32,8 +32,8 @@ pub fn lfo_value(lfo: &LfoConfig, pulse: u64) -> f64 {
     }
 }
 
-pub fn modulated_value(base: f64, lfo: Option<&LfoConfig>, pulse: u64) -> f64 {
-    let modulation = lfo.map_or(0.0, |source| lfo_value(source, pulse) * source.depth);
+pub fn modulated_value(base: f64, lfo: Option<&LfoConfig>, depth: f64, pulse: u64) -> f64 {
+    let modulation = lfo.map_or(0.0, |source| lfo_value(source, pulse) * depth);
     (base + modulation).clamp(0.0, 127.0)
 }
 
@@ -63,7 +63,6 @@ mod tests {
             id: LfoId::Lfo1,
             shape: LfoShape::Sine,
             period: LfoPeriod::Quarter,
-            depth: 20.0,
         }
     }
 
@@ -83,7 +82,6 @@ mod tests {
             id: LfoId::Lfo4,
             shape: LfoShape::Random,
             period: LfoPeriod::Bar1,
-            depth: 20.0,
         };
         assert_eq!(lfo_value(&lfo, 0), lfo_value(&lfo, 95));
         assert_ne!(lfo_value(&lfo, 95), lfo_value(&lfo, 96));
@@ -93,12 +91,11 @@ mod tests {
     fn depth_is_bipolar_and_clamped_to_midi_range() {
         let lfo = LfoConfig {
             shape: LfoShape::Square,
-            depth: 40.0,
             ..sine()
         };
-        assert_eq!(modulated_value(64.0, Some(&lfo), 0), 104.0);
-        assert_eq!(modulated_value(110.0, Some(&lfo), 0), 127.0);
-        assert_eq!(modulated_value(10.0, Some(&lfo), 12), 0.0);
-        assert_eq!(modulated_value(73.0, None, 0), 73.0);
+        assert_eq!(modulated_value(64.0, Some(&lfo), 40.0, 0), 104.0);
+        assert_eq!(modulated_value(110.0, Some(&lfo), 40.0, 0), 127.0);
+        assert_eq!(modulated_value(10.0, Some(&lfo), 40.0, 12), 0.0);
+        assert_eq!(modulated_value(73.0, None, 40.0, 0), 73.0);
     }
 }

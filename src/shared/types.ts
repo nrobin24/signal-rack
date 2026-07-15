@@ -19,7 +19,6 @@ export type LfoConfig = {
   id: LfoId
   shape: LfoShape
   period: LfoPeriod
-  depth: number
 }
 
 export type Step = {
@@ -40,6 +39,8 @@ export type TrackConfig = {
   space?: number
   toneLfo?: LfoId
   spaceLfo?: LfoId
+  toneLfoDepth?: number
+  spaceLfoDepth?: number
   steps: Step[]
 }
 

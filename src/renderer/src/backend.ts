@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import type { RackTarget, SequencerConfig, TrackId } from '../../shared/types'
+import type { LfoId, RackTarget, SequencerConfig, TrackId } from '../../shared/types'
 import type { GeneratedSeed, SeedSettings } from './seed'
 
 type EngineStatus = {
@@ -38,5 +38,6 @@ export const backend = {
   stop: (): Promise<void> => call('stop_transport'),
   generateSeed: (settings: SeedSettings, variation: number): Promise<GeneratedSeed> => call('generate_seed', { settings, variation }),
   onStep: (callback: (steps: Partial<Record<TrackId, number>>) => void): Promise<UnlistenFn> => subscribe('sequencer-step', callback),
+  onLfoLevels: (callback: (levels: Record<LfoId, number>) => void): Promise<UnlistenFn> => subscribe('lfo-levels', callback),
   onStopped: (callback: () => void): Promise<UnlistenFn> => subscribe('sequencer-stopped', callback)
 }

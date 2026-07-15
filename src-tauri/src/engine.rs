@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::{
         Arc, Mutex,
-        mpsc::{self, RecvTimeoutError, Sender},
+        mpsc::{self, Sender, TryRecvError},
     },
     thread,
     time::{Duration, Instant},
@@ -10,11 +10,12 @@ use std::{
 
 use midir::{MidiOutput, MidiOutputConnection};
 use serde::Serialize;
+use spin_sleep::{SpinSleeper, SpinStrategy};
 use tauri::{AppHandle, Emitter};
 
 use crate::{
-    lfo::modulated_value,
-    model::{Groove, RackTarget, SceneId, SequencerConfig, TrackConfig, TrackId},
+    lfo::{lfo_value, modulated_value},
+    model::{Groove, LfoId, RackTarget, SceneId, SequencerConfig, TrackConfig, TrackId},
 };
 
 #[derive(Clone)]
@@ -58,6 +59,7 @@ pub struct Engine {
     random_state: u64,
     scheduled: Vec<ScheduledEvent>,
     stop_sender: Option<Sender<()>>,
+    run_id: u64,
 }
 
 impl Default for Engine {
@@ -71,6 +73,7 @@ impl Default for Engine {
             random_state: 0x5eed_fade_cafe_babe,
             scheduled: Vec::new(),
             stop_sender: None,
+            run_id: 0,
         }
     }
 }
@@ -95,6 +98,51 @@ pub fn midi_port_names() -> Result<Vec<String>, String> {
         .iter()
         .map(|port| output.port_name(port).map_err(|error| error.to_string()))
         .collect()
+}
+
+pub struct ClockProbe {
+    pub pulses: usize,
+    pub requested_bpm: f64,
+    pub measured_bpm: f64,
+    pub mean_lateness_micros: f64,
+    pub max_lateness_micros: u128,
+}
+
+/// Measures the same absolute-deadline precision sleeper used by the transport without opening a
+/// MIDI port. This is intentionally opt-in through the CLI so normal unit tests are deterministic.
+pub fn probe_clock(bpm: f64, seconds: f64) -> ClockProbe {
+    let bpm = bpm.clamp(30.0, 300.0);
+    let interval = clock_interval(bpm);
+    let pulses = ((seconds.clamp(0.5, 30.0) / interval.as_secs_f64()).round() as usize).max(2);
+    let start = Instant::now() + Duration::from_millis(10);
+    let sleeper = precision_sleeper();
+    let mut first = None;
+    let mut last = None;
+    let mut total_lateness = 0_u128;
+    let mut max_lateness = 0_u128;
+
+    for pulse in 0..pulses {
+        let deadline = start + interval.saturating_mul(pulse as u32);
+        sleeper.sleep_until(deadline);
+        let actual = Instant::now();
+        let lateness = actual.saturating_duration_since(deadline).as_micros();
+        total_lateness += lateness;
+        max_lateness = max_lateness.max(lateness);
+        first.get_or_insert(actual);
+        last = Some(actual);
+    }
+
+    let elapsed = last
+        .expect("clock probe records a final pulse")
+        .duration_since(first.expect("clock probe records a first pulse"));
+    let measured_bpm = 60.0 * (pulses - 1) as f64 / elapsed.as_secs_f64() / 24.0;
+    ClockProbe {
+        pulses,
+        requested_bpm: bpm,
+        measured_bpm,
+        mean_lateness_micros: total_lateness as f64 / pulses as f64,
+        max_lateness_micros: max_lateness,
+    }
 }
 
 pub fn status(state: &EngineState) -> Result<EngineStatus, String> {
@@ -179,54 +227,71 @@ pub fn set_macros(
 pub fn start(state: &EngineState, app: AppHandle) -> Result<(), String> {
     stop_inner(state, &app, false)?;
     let (sender, receiver) = mpsc::channel();
-    {
+    let run_id = {
         let mut engine = state
             .0
             .lock()
             .map_err(|_| "sequencer state lock poisoned".to_string())?;
         engine.pulse = 0;
         engine.playing = true;
+        engine.run_id = engine.run_id.wrapping_add(1);
         engine.stop_sender = Some(sender);
         engine.send_all_macros();
         engine.broadcast(&[0xfa]);
-    }
+        engine.run_id
+    };
 
     let shared = state.0.clone();
     thread::Builder::new()
         .name("signal-rack-clock".into())
         .spawn(move || {
             let mut next_clock = Instant::now();
+            let sleeper = precision_sleeper();
             loop {
                 let now = Instant::now();
-                let (playing, next_event, interval) = {
+                let (playing, next_event) = {
                     let Ok(mut engine) = shared.lock() else {
                         break;
                     };
-                    if !engine.playing {
+                    if !engine.playing || engine.run_id != run_id {
                         break;
                     }
-                    engine.process_due(now);
-                    let interval =
-                        Duration::from_secs_f64(60.0 / engine.config.bpm.clamp(30.0, 300.0) / 24.0);
+                    let interval = clock_interval(engine.config.bpm);
                     if now >= next_clock {
-                        engine.tick(&app, now);
-                        next_clock = now + interval;
+                        // Keep the deadline anchored to the musical timeline. Resetting it from
+                        // `now` accumulates every scheduler wake-up delay and makes the clock slow.
+                        // A very large stall is resynchronized instead of sending a burst of old
+                        // clock pulses into the hardware.
+                        if now.saturating_duration_since(next_clock) > interval.saturating_mul(4) {
+                            next_clock = now;
+                        }
+                        engine.tick(&app, next_clock);
+                        next_clock += interval;
                     }
-                    (engine.playing, engine.next_due(), interval)
+                    // MIDI clock always gets first priority when clock and note events coincide.
+                    engine.process_due(Instant::now());
+                    (engine.playing, engine.next_due())
                 };
                 if !playing {
                     break;
                 }
                 let wake = next_event.map_or(next_clock, |event| event.min(next_clock));
-                let timeout = wake.saturating_duration_since(Instant::now()).min(interval);
-                match receiver.recv_timeout(timeout) {
-                    Ok(()) | Err(RecvTimeoutError::Disconnected) => break,
-                    Err(RecvTimeoutError::Timeout) => {}
+                match receiver.try_recv() {
+                    Ok(()) | Err(TryRecvError::Disconnected) => break,
+                    Err(TryRecvError::Empty) => sleeper.sleep_until(wake),
                 }
             }
         })
         .map_err(|error| error.to_string())?;
     Ok(())
+}
+
+fn clock_interval(bpm: f64) -> Duration {
+    Duration::from_secs_f64(60.0 / bpm.clamp(30.0, 300.0) / 24.0)
+}
+
+fn precision_sleeper() -> SpinSleeper {
+    SpinSleeper::new(5_000_000).with_spin_strategy(SpinStrategy::SpinLoopHint)
 }
 
 pub fn stop(state: &EngineState, app: &AppHandle) -> Result<(), String> {
@@ -243,6 +308,7 @@ fn stop_inner(state: &EngineState, app: &AppHandle, emit: bool) -> Result<(), St
             let _ = sender.send(());
         }
         let was_playing = engine.playing;
+        engine.run_id = engine.run_id.wrapping_add(1);
         if was_playing {
             engine.broadcast(&[0xfc]);
         }
@@ -393,14 +459,22 @@ impl Engine {
     }
 
     fn macro_value(&self, track: &TrackConfig, macro_name: &str) -> f64 {
-        let (base, source) = if macro_name == "tone" {
-            (track.tone.unwrap_or(64.0), track.tone_lfo)
+        let (base, source, depth) = if macro_name == "tone" {
+            (
+                track.tone.unwrap_or(64.0),
+                track.tone_lfo,
+                track.tone_lfo_depth,
+            )
         } else {
-            (track.space.unwrap_or(32.0), track.space_lfo)
+            (
+                track.space.unwrap_or(32.0),
+                track.space_lfo,
+                track.space_lfo_depth,
+            )
         };
         let lfo =
             source.and_then(|id| self.config.lfos.iter().find(|candidate| candidate.id == id));
-        modulated_value(base, lfo, if self.playing { self.pulse } else { 0 })
+        modulated_value(base, lfo, depth, if self.playing { self.pulse } else { 0 })
     }
 
     fn send_track_macros(&mut self, track: &TrackConfig) {
@@ -506,27 +580,33 @@ impl Engine {
         });
     }
 
-    fn play_step(&mut self, global_step: usize, app: &AppHandle, now: Instant) {
+    fn play_step(&mut self, global_step: usize, app: &AppHandle, step_boundary: Instant) {
         let tracks = self.config.tracks.clone();
+        let step_duration = self.step_duration();
         let positions: HashMap<&'static str, usize> = tracks
             .iter()
             .filter(|track| track.length > 0)
             .map(|track| (track_id_name(track.id), global_step % track.length))
             .collect();
-        let _ = app.emit("sequencer-step", positions);
+        let lfo_levels: HashMap<&'static str, f64> = self
+            .config
+            .lfos
+            .iter()
+            .map(|lfo| (lfo_id_name(lfo.id), lfo_value(lfo, self.pulse)))
+            .collect();
 
         for track in &tracks {
             if track.length == 0 {
                 continue;
             }
             let index = global_step % track.length;
-            let offset = groove_offset(track.groove, index);
+            let offset = groove_offset_micros(track.groove, index, step_duration);
             if global_step == 0 || offset >= 0 {
                 if offset == 0 {
-                    self.play_track_step(track.id, index, now);
+                    self.play_track_step(track.id, index, Instant::now());
                 } else {
                     self.scheduled.push(ScheduledEvent {
-                        due: now + Duration::from_millis(offset as u64),
+                        due: step_boundary + Duration::from_micros(offset as u64),
                         kind: ScheduledEventKind::PlayStep {
                             track_id: track.id,
                             step_index: index,
@@ -540,13 +620,11 @@ impl Engine {
                 continue;
             }
             let next_index = (global_step + 1) % track.length;
-            let early = groove_offset(track.groove, next_index);
+            let early = groove_offset_micros(track.groove, next_index, step_duration);
             if early < 0 {
-                let delay = self
-                    .step_duration()
-                    .saturating_sub(Duration::from_millis((-early) as u64));
+                let delay = step_duration.saturating_sub(Duration::from_micros((-early) as u64));
                 self.scheduled.push(ScheduledEvent {
-                    due: now + delay,
+                    due: step_boundary + delay,
                     kind: ScheduledEventKind::PlayStep {
                         track_id: track.id,
                         step_index: next_index,
@@ -554,6 +632,9 @@ impl Engine {
                 });
             }
         }
+        // UI telemetry is deliberately last: clock and musical event scheduling have priority.
+        let _ = app.emit("sequencer-step", positions);
+        let _ = app.emit("lfo-levels", lfo_levels);
     }
 
     fn tick(&mut self, app: &AppHandle, now: Instant) {
@@ -601,29 +682,33 @@ impl Engine {
     }
 }
 
-fn groove_offset(groove: Groove, step: usize) -> i64 {
+fn groove_offset_ratio(groove: Groove, step: usize) -> f64 {
     match groove {
-        Groove::Straight => 0,
+        Groove::Straight => 0.0,
         Groove::Push => {
             if step % 4 == 2 {
-                -20
+                -0.18
             } else if step % 2 == 1 {
-                -9
+                -0.08
             } else {
-                0
+                0.0
             }
         }
         Groove::Late => {
             if step % 4 == 3 {
-                32
+                0.28
             } else if step % 2 == 1 {
-                15
+                0.13
             } else {
-                0
+                0.0
             }
         }
-        Groove::Broken => [0, 28, -15, 16][step % 4],
+        Groove::Broken => [0.0, 0.25, -0.13, 0.14][step % 4],
     }
+}
+
+fn groove_offset_micros(groove: Groove, step: usize, step_duration: Duration) -> i64 {
+    (step_duration.as_secs_f64() * groove_offset_ratio(groove, step) * 1_000_000.0).round() as i64
 }
 
 fn track_id_name(id: TrackId) -> &'static str {
@@ -641,19 +726,51 @@ fn track_id_name(id: TrackId) -> &'static str {
     }
 }
 
+fn lfo_id_name(id: LfoId) -> &'static str {
+    match id {
+        LfoId::Lfo1 => "lfo-1",
+        LfoId::Lfo2 => "lfo-2",
+        LfoId::Lfo3 => "lfo-3",
+        LfoId::Lfo4 => "lfo-4",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn groove_offsets_match_the_prototype_contract() {
+    fn groove_offsets_match_the_132_bpm_contract() {
+        let step = Duration::from_secs_f64(60.0 / 132.0 / 4.0);
+        let millis = |groove, index| {
+            (groove_offset_micros(groove, index, step) as f64 / 1_000.0).round() as i64
+        };
         assert_eq!(
             (0..4)
-                .map(|step| groove_offset(Groove::Broken, step))
+                .map(|index| millis(Groove::Broken, index))
                 .collect::<Vec<_>>(),
             vec![0, 28, -15, 16]
         );
-        assert_eq!(groove_offset(Groove::Push, 2), -20);
-        assert_eq!(groove_offset(Groove::Late, 3), 32);
+        assert_eq!(millis(Groove::Push, 2), -20);
+        assert_eq!(millis(Groove::Late, 3), 32);
+    }
+
+    #[test]
+    fn groove_offsets_scale_with_tempo() {
+        let fast = Duration::from_secs_f64(60.0 / 132.0 / 4.0);
+        let slow = Duration::from_secs_f64(60.0 / 66.0 / 4.0);
+        assert_eq!(
+            groove_offset_micros(Groove::Broken, 1, slow),
+            groove_offset_micros(Groove::Broken, 1, fast) * 2
+        );
+        assert_eq!(groove_offset_ratio(Groove::Straight, 7), 0.0);
+    }
+
+    #[test]
+    fn midi_clock_interval_is_24_ppqn_at_requested_tempo() {
+        let interval = clock_interval(132.0);
+        let recovered_bpm = 60.0 / interval.as_secs_f64() / 24.0;
+        assert!((recovered_bpm - 132.0).abs() < 0.000_001);
+        assert_eq!(interval.as_micros(), 18_939);
     }
 }
