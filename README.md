@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/images/signal-rack-hero.png" alt="Signal Rack generative MIDI sequencer mounted as a physical studio rack instrument" width="100%" />
+</p>
+
 # Signal Rack
 
 Signal Rack is a Tauri desktop MIDI environment built from device-specific instrument modules and a shared musical direction layer. React renders the rack; Rust owns generation, clocking, modulation, scheduling, and CoreMIDI output.
