@@ -180,6 +180,7 @@ pub enum RhythmConcept {
     Footwork,
     Dub,
     Jungle,
+    #[serde(rename = "uk-bass", alias = "ukbass")]
     UkBass,
     Brazilian,
     Electro,
