@@ -330,13 +330,78 @@ h1 { margin: 5px 0 0; font: 900 22px/.95 "Arial Narrow", "Helvetica Neue", sans-
 
 footer { text-align: center; padding: 0 20px 22px; color: #d9b885; font-size: 11px; }
 
+/* Desktop-density pass: keep the full rack readable on shorter studio displays. */
+.transport { min-height: 52px; gap: 14px; padding: 7px 18px; }
+.transport label { gap: 2px; font-size: 8px; }
+.transport input { width: 68px; height: 27px; padding: 3px 8px; }
+.transport button { min-height: 27px; padding: 4px 11px; }
+.rack { margin: 8px auto 20px; padding: 7px; }
+.rack-stack { gap: 7px; }
+.rack-unit { scroll-margin-top: 62px; }
+.unit-face { padding: 12px 14px 14px; }
+.unit-heading { gap: 14px; padding-bottom: 7px; }
+h1 { margin-top: 3px; font-size: 20px; }
+.instrument-mute { width: 72px; height: 29px; font-size: 8px; }
+.module-body { padding-top: 8px; }
+
+.seed-module .unit-face, .lfo-module .unit-face { padding: 10px 12px 11px; }
+.seed-module .unit-heading, .lfo-module .unit-heading { padding-bottom: 6px; }
+.seed-controls { gap: 5px 6px; margin-top: 7px; }
+.seed-select, .energy-control { gap: 3px; color: #27312c; font-size: 8px; font-weight: 900; letter-spacing: .1em; }
+.seed-select select, .energy-control > div, .seed-action { height: 27px; }
+.seed-select select { padding: 3px 6px; }
+.seed-action { padding: 3px 8px; }
+.seed-result { margin-top: 7px; padding-top: 6px; }
+.cycle-control { height: 21px; }
+
+.lfo-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; margin-top: 7px; }
+.lfo-card { gap: 3px 4px; padding: 5px; }
+.lfo-title strong { font-size: 18px; line-height: 13px; }
+.lfo-monitor { height: 8px; }
+.lfo-card select { height: 24px; padding: 2px 4px; }
+
+.scene-strip { gap: 5px; margin-bottom: 6px; }
+.scene-strip > button { width: 92px; min-height: 32px; padding: 4px 7px; gap: 1px; }
+.scene-lens { gap: 8px; padding: 3px 8px; }
+.sequence-toolbar { min-height: 29px; margin-bottom: 4px; padding: 1px 0 3px; }
+.sequence-toolbar button { height: 24px; }
+
+.lanes, .drum-lanes { gap: 3px; }
+.lane { grid-template-columns: 42px 205px minmax(600px, 1fr) 235px; gap: 5px; padding: 2px 4px; border-left-width: 1px; }
+.lane-label { grid-template-columns: minmax(0, 1fr) 54px; gap: 2px 5px; }
+.track-title { display: block; min-width: 0; overflow: hidden; color: currentColor; font-size: 10px; letter-spacing: .05em; text-overflow: ellipsis; white-space: nowrap; }
+.lane-label .track-title { grid-column: 1 / -1; }
+.lane-mute { align-self: stretch; min-width: 0; border: 2px outset #65705e; color: #c7d1c0; background: linear-gradient(#30382c, #20271e); box-shadow: 2px 2px 0 #090a08, inset 0 1px 0 #ffffff1c; padding: 2px; display: grid; place-content: center; font-size: 7px; font-weight: 900; line-height: 1; letter-spacing: .04em; }
+.lane-mute.engaged { color: #25150f; border-color: #ffb28f; background: #ff755d; box-shadow: 0 0 14px #ff755d77, 2px 2px 0 #461910; }
+.lane-performance label { gap: 1px; }
+.lane-performance select, .drum-label select { height: 22px; padding: 1px 3px; }
+.step { min-height: 40px; }
+.map-bar { height: 40px; }
+.map-cell { height: 23px; }
+.macros { grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: center; gap: 4px; }
+.macro { grid-template-columns: minmax(0, 1fr) 50px; padding: 1px 3px; }
+.macro.patched { padding: 3px; }
+.step-editor { gap: 8px; margin-top: 6px; padding: 6px 9px; }
+.notes-field { gap: 2px; }
+.notes-field input { height: 27px; padding: 4px 6px; }
+
+.drum-lane { grid-template-columns: 42px 215px minmax(700px, 1fr); gap: 5px; padding: 2px 5px; border-left-width: 1px; }
+.drum-label { grid-template-columns: minmax(0, 1fr); align-content: center; align-items: center; gap: 2px; padding-right: 6px; }
+.drum-performance { grid-template-columns: 44px minmax(0, 1fr); gap: 4px; }
+.drum-lane .sequence-map { min-height: 40px; }
+.drum-pad { grid-template-rows: 29px 11px; }
+.drum-step-editor { gap: 9px; margin-top: 6px; padding: 6px 9px; }
+.trig-state { height: 35px; }
+
 @media (max-width: 1250px) {
   .transport { padding: 9px 18px; }
   .rack { margin: 8px 8px 20px; padding: 7px; }
-  .unit-face { padding: 16px 17px 18px; }
+  .unit-face { padding: 12px 14px 14px; }
   .seed-controls { grid-template-columns: 60px minmax(0, .95fr) minmax(0, 1.15fr) minmax(104px, .8fr); }
-  .lfo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .lane { grid-template-columns: 178px minmax(600px, 1fr) 180px; }
+  .lfo-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .lane { grid-template-columns: 40px 195px minmax(540px, 1fr) 210px; }
+  .step-grid { grid-template-columns: repeat(16, minmax(30px, 1fr)); }
+  .drum-lane { grid-template-columns: 40px 205px minmax(640px, 1fr); }
   .scene-lens { min-width: 285px; }
   .step-editor { grid-template-columns: 130px minmax(180px, 1.4fr) repeat(3, minmax(90px, 1fr)) auto; gap: 9px; }
   .drum-step-editor { grid-template-columns: 145px 78px repeat(3, minmax(105px, 1fr)); gap: 8px; }

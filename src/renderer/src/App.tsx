@@ -440,8 +440,9 @@ function DigitoneLane({ track, view, page, selected, currentStep, lfoLevels, onS
   const pageStart = page * pageSize
   const displayedSteps = view === 'detail' ? track.steps.slice(pageStart, pageStart + pageSize) : track.steps
   return <section className={`lane ${track.color}`}>
+    <LaneMute label={track.label} muted={track.muted} onMute={() => onChange((value) => ({ ...value, muted: !value.muted }))} />
     <div className="lane-label">
-      <LaneTitle label={track.label} muted={track.muted} onMute={() => onChange((value) => ({ ...value, muted: !value.muted }))} />
+      <strong className="track-title" title={track.label}>{track.label}</strong>
       <div className="lane-performance"><label>LEN<select aria-label={`${track.label} length`} value={track.length} onChange={(event) => onChange((value) => ({ ...value, length: Number(event.target.value) }))}>{sequenceLengths.map((length) => <option key={length} value={length}>{length}</option>)}</select></label><label>GROOVE<select value={track.groove} onChange={(event) => onChange((value) => ({ ...value, groove: event.target.value as Groove }))}>{grooveOptions()}</select></label></div>
       <div className="octave-controls"><small>OCTAVE</small><button disabled={track.octave === -2} onClick={() => onChange((value) => ({ ...value, octave: value.octave - 1 }))}>−</button><strong>{track.octave > 0 ? `+${track.octave}` : track.octave}</strong><button disabled={track.octave === 4} onClick={() => onChange((value) => ({ ...value, octave: value.octave + 1 }))}>+</button></div>
     </div>
@@ -460,7 +461,8 @@ function DigitaktLane({ track, view, page, selected, currentStep, onSelect, onCh
   const pageStart = page * pageSize
   const displayedSteps = track.steps.slice(pageStart, pageStart + pageSize)
   return <section className={`drum-lane ${track.color}`}>
-    <div className="drum-label"><LaneTitle label={track.label} muted={track.muted} onMute={() => onChange((value) => ({ ...value, muted: !value.muted }))} /><div className="drum-performance"><label>LEN<select aria-label={`${track.label} length`} value={track.length} onChange={(event) => onChange((value) => ({ ...value, length: Number(event.target.value) }))}>{sequenceLengths.map((length) => <option key={length} value={length}>{length}</option>)}</select></label><label>GROOVE<select value={track.groove} onChange={(event) => onChange((value) => ({ ...value, groove: event.target.value as Groove }))}>{grooveOptions()}</select></label></div></div>
+    <LaneMute label={track.label} muted={track.muted} onMute={() => onChange((value) => ({ ...value, muted: !value.muted }))} />
+    <div className="drum-label"><strong className="track-title" title={track.label}>{track.label}</strong><div className="drum-performance"><label>LEN<select aria-label={`${track.label} length`} value={track.length} onChange={(event) => onChange((value) => ({ ...value, length: Number(event.target.value) }))}>{sequenceLengths.map((length) => <option key={length} value={length}>{length}</option>)}</select></label><label>GROOVE<select value={track.groove} onChange={(event) => onChange((value) => ({ ...value, groove: event.target.value as Groove }))}>{grooveOptions()}</select></label></div></div>
     {view === 'detail' ? <div className="drum-grid">{displayedSteps.map((step, offset) => { const index = pageStart + offset; return <div key={index} className={`drum-pad ${step.notes.length ? 'hit' : ''} ${step.notes.length && step.velocity >= 112 ? 'accent' : ''} ${currentStep === index ? 'active' : ''} ${selected === index ? 'selected' : ''}`}>
       <button className="drum-trigger" onClick={() => toggleStep(index)} aria-label={`Toggle ${track.label} step ${index + 1} ${step.notes.length ? 'off' : 'on'}`} title={`${step.notes.length ? 'Turn off' : 'Turn on'} step ${index + 1}`}><span>{String(index + 1).padStart(2, '0')}</span><strong>{step.notes.length ? '●' : '·'}</strong><small>{step.notes.length ? `${step.velocity}/${step.probability}` : 'OFF'}</small></button>
       <button className="drum-edit" onClick={() => onSelect(index)} aria-label={`Edit ${track.label} step ${index + 1}`}>{selected === index ? 'EDITING' : 'EDIT'}</button>
@@ -479,8 +481,8 @@ function SequenceMap({ track, selected, currentStep, onSelect }: { track: Digito
   </div>
 }
 
-function LaneTitle({ label, muted, onMute }: { label: string; muted: boolean; onMute: () => void }): React.JSX.Element {
-  return <div className="lane-title"><span>{label}</span><button className={`mute ${muted ? 'engaged' : ''}`} aria-pressed={muted} onClick={onMute}>{muted ? 'MUTED' : 'MUTE'}</button></div>
+function LaneMute({ label, muted, onMute }: { label: string; muted: boolean; onMute: () => void }): React.JSX.Element {
+  return <button className={`lane-mute ${muted ? 'engaged' : ''}`} aria-label={muted ? 'MUTED' : 'MUTE'} title={`${muted ? 'Unmute' : 'Mute'} ${label}`} aria-pressed={muted} onClick={onMute}>{muted ? 'MUTED' : 'MUTE'}</button>
 }
 
 function Macro({ label, value, source, depth, lfoLevel, routeLabel, onChange, onSource, onDepth }: { label: string; value: number; source: LfoId | 'manual'; depth: number; lfoLevel: number; routeLabel: string; onChange: (value: number) => void; onSource: (source: LfoId | 'manual') => void; onDepth: (depth: number) => void }): React.JSX.Element {
