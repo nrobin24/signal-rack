@@ -80,6 +80,10 @@ Vamp movement deliberately scales with the musical controls. Low-energy Dorian c
 
 The **CYCLE** control separates the shared four-bar composition from individual lane loop lengths. **AUTO** keeps the Digitakt parts and phrase-leading Digitone voice on the 64-step frame while giving one complementary Digitone voice a style-appropriate 10-, 12-, or 14-step cycle. **POLY** uses two independent Digitone cycles while retaining a 64-step phrase leader. **LOCKED** keeps every generated lane at 64 steps. Short cycles contain purpose-built local material rather than simply truncating the four-bar phrase.
 
+### Generator Lab
+
+Open **GENERATOR LAB** from the transport header to run a focused hardware-listening session. Define a goal and hypothesis, freeze a blind batch of 6-12 generated candidates, then audition each for one cycle, two cycles, or continuously. Candidate settings remain concealed until a Keep/Maybe/Reject verdict is recorded; quick tags and notes travel with the complete rendered arrangement in the exported JSON session. Native exports are saved under the Signal Rack application-data directory in `generator-lab/sessions` and the exact path is shown after saving.
+
 ## Global LFOs
 
 Each of the four LFOs has a selectable shape, clock-synced time, and a live bipolar level meter. Shapes include sine, triangle, square, rising and falling ramps, and sample-and-hold. Times range from a quarter note through 32 bars and restart with the transport.

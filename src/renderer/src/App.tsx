@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { DigitaktTrackId, DigitoneTrackId, Groove, LfoConfig, LfoId, LfoPeriod, LfoShape, RackTarget, SceneId, SequencerConfig, Step, TrackConfig, TrackId } from '../../shared/types'
 import { backend } from './backend'
+import GeneratorLab, { type LabCandidate, type LabCycleMode } from './GeneratorLab'
 import {
   bassRoleLabels,
   harmonyLabels,
@@ -40,6 +41,7 @@ type SelectedStep = { trackId: DigitoneTrackId; index: number }
 type SelectedDrumStep = { trackId: DigitaktTrackId; index: number }
 type OutputSelection = Record<RackTarget, number | null>
 type SequenceView = 'detail' | 'overview'
+type AppMode = 'rack' | 'generator-lab'
 
 const stepCount = 64
 const pageSize = 16
@@ -96,6 +98,7 @@ const sceneInfo: Record<SceneId, { label: string; detail: string; density: Recor
 }
 
 export default function App(): React.JSX.Element {
+  const [mode, setMode] = useState<AppMode>('rack')
   const [bpm, setBpm] = useState(132)
   const [outputs, setOutputs] = useState<string[]>([])
   const [selectedOutputs, setSelectedOutputs] = useState<OutputSelection>({ digitone: null, digitakt: null })
@@ -117,15 +120,17 @@ export default function App(): React.JSX.Element {
   const [seedCount, setSeedCount] = useState(0)
   const [lastSeed, setLastSeed] = useState('No generated phrase yet')
   const [seedBusy, setSeedBusy] = useState(false)
+  const [playingCandidateId, setPlayingCandidateId] = useState<string | null>(null)
   const seedVariation = useRef(0)
   const latestSeedRequest = useRef(0)
+  const labStopTimer = useRef<number | null>(null)
 
   useEffect(() => {
     let disposed = false
     let unsubscribeStep: (() => void) | undefined
     let unsubscribeLfo: (() => void) | undefined
     let unsubscribeStop: (() => void) | undefined
-    void Promise.all([backend.listOutputs(), backend.getStatus(), backend.onStep((steps) => setCurrentSteps(steps)), backend.onLfoLevels((levels) => setLfoLevels(levels)), backend.onStopped(() => { setPlaying(false); setCurrentSteps({}); setLfoLevels({ 'lfo-1': 0, 'lfo-2': 0, 'lfo-3': 0, 'lfo-4': 0 }) })]).then(([nextOutputs, status, nextUnsubscribeStep, nextUnsubscribeLfo, nextUnsubscribeStop]) => {
+    void Promise.all([backend.listOutputs(), backend.getStatus(), backend.onStep((steps) => setCurrentSteps(steps)), backend.onLfoLevels((levels) => setLfoLevels(levels)), backend.onStopped(() => { if (labStopTimer.current !== null) { window.clearTimeout(labStopTimer.current); labStopTimer.current = null } setPlaying(false); setPlayingCandidateId(null); setCurrentSteps({}); setLfoLevels({ 'lfo-1': 0, 'lfo-2': 0, 'lfo-3': 0, 'lfo-4': 0 }) })]).then(([nextOutputs, status, nextUnsubscribeStep, nextUnsubscribeLfo, nextUnsubscribeStop]) => {
       if (disposed) { nextUnsubscribeStep(); nextUnsubscribeLfo(); nextUnsubscribeStop(); return }
       unsubscribeStep = nextUnsubscribeStep
       unsubscribeLfo = nextUnsubscribeLfo
@@ -137,7 +142,7 @@ export default function App(): React.JSX.Element {
       })
       setPlaying(status.playing)
     }).catch(console.error)
-    return () => { disposed = true; unsubscribeStep?.(); unsubscribeLfo?.(); unsubscribeStop?.() }
+    return () => { disposed = true; if (labStopTimer.current !== null) window.clearTimeout(labStopTimer.current); unsubscribeStep?.(); unsubscribeLfo?.(); unsubscribeStop?.() }
   }, [])
 
   function config(nextDigitone = digitoneTracks, nextDigitakt = digitaktTracks, nextScene = scene, nextBpm = bpm, nextLfos = lfos, nextInstrumentMutes = instrumentMutes): SequencerConfig {
@@ -179,8 +184,13 @@ export default function App(): React.JSX.Element {
   }
 
   async function stopTransport(): Promise<void> {
+    if (labStopTimer.current !== null) {
+      window.clearTimeout(labStopTimer.current)
+      labStopTimer.current = null
+    }
     await backend.stop()
     setPlaying(false)
+    setPlayingCandidateId(null)
     setCurrentSteps({})
   }
 
@@ -262,31 +272,65 @@ export default function App(): React.JSX.Element {
       const generated = await backend.generateSeed(seedSettings, variation)
       if (request !== latestSeedRequest.current) return
 
-      const generatedById = new Map(generated.tracks.map((track) => [track.id, track]))
-      const nextDigitone = digitoneTracks.map((track) => {
-        const next = generatedById.get(track.id)
-        return next ? { ...track, length: next.length, groove: next.groove, steps: normalizeSteps(next.steps), tone: next.tone ?? track.tone, space: next.space ?? track.space } : track
-      })
-      const nextDigitakt = digitaktTracks.map((track) => {
-        const next = generatedById.get(track.id)
-        return next ? { ...track, length: next.length, groove: next.groove, steps: normalizeSteps(next.steps) } : track
-      })
-      setDigitoneTracks(nextDigitone)
-      setDigitaktTracks(nextDigitakt)
+      await applyGeneratedSeed(generated)
       setSeedCount(variation)
       setLastSeed(generated.summary)
-      void backend.configure(config(nextDigitone, nextDigitakt))
-        .then(() => Promise.all(nextDigitone.map((track) => backend.setMacros(track.id, track.tone, track.space))))
-        .catch((error: unknown) => {
-          console.error(error)
-          if (request === latestSeedRequest.current) setLastSeed(`${generated.summary} · MIDI SYNC ERROR`)
-        })
     } catch (error: unknown) {
       console.error(error)
       if (request === latestSeedRequest.current) setLastSeed(`GENERATOR ERROR · ${errorMessage(error)}`)
     } finally {
       if (request === latestSeedRequest.current) setSeedBusy(false)
     }
+  }
+
+  async function applyGeneratedSeed(generated: Awaited<ReturnType<typeof backend.generateSeed>>): Promise<{ nextDigitone: DigitoneTrack[]; nextDigitakt: DigitaktTrack[] }> {
+    const generatedById = new Map(generated.tracks.map((track) => [track.id, track]))
+    const nextDigitone = digitoneTracks.map((track) => {
+      const next = generatedById.get(track.id)
+      return next ? { ...track, length: next.length, groove: next.groove, steps: normalizeSteps(next.steps), tone: next.tone ?? track.tone, space: next.space ?? track.space } : track
+    })
+    const nextDigitakt = digitaktTracks.map((track) => {
+      const next = generatedById.get(track.id)
+      return next ? { ...track, length: next.length, groove: next.groove, steps: normalizeSteps(next.steps) } : track
+    })
+    setDigitoneTracks(nextDigitone)
+    setDigitaktTracks(nextDigitakt)
+    await backend.configure(config(nextDigitone, nextDigitakt))
+    await Promise.all(nextDigitone.map((track) => backend.setMacros(track.id, track.tone, track.space)))
+    return { nextDigitone, nextDigitakt }
+  }
+
+  async function generateLabBatch(settings: SeedSettings, count: number): Promise<Array<{ variation: number; generated: Awaited<ReturnType<typeof backend.generateSeed>> }>> {
+    const requests = Array.from({ length: count }, () => {
+      seedVariation.current += 1
+      const variation = seedVariation.current
+      return backend.generateSeed(settings, variation).then((generated) => ({ variation, generated }))
+    })
+    return Promise.all(requests)
+  }
+
+  async function auditionLabCandidate(candidate: LabCandidate, cycles: LabCycleMode): Promise<void> {
+    if (selectedOutputs.digitone === null && selectedOutputs.digitakt === null) return
+    if (labStopTimer.current !== null) window.clearTimeout(labStopTimer.current)
+    if (playing) await backend.stop()
+    await applyGeneratedSeed(candidate.generated)
+    await backend.start()
+    setPlaying(true)
+    setPlayingCandidateId(candidate.id)
+    if (cycles !== 'loop') {
+      const duration = Math.ceil((60_000 / bpm) * 16 * cycles)
+      labStopTimer.current = window.setTimeout(() => { void stopTransport() }, duration)
+    }
+  }
+
+  function exitGeneratorLab(): void {
+    if (playingCandidateId !== null) void stopTransport()
+    setMode('rack')
+  }
+
+  function enterGeneratorLab(): void {
+    if (playing) void stopTransport()
+    setMode('generator-lab')
   }
 
   const selectedTrack = digitoneTracks.find((track) => track.id === selectedStep.trackId) ?? digitoneTracks[0]
@@ -297,17 +341,19 @@ export default function App(): React.JSX.Element {
 
   return <main className="app-shell">
     <header className="transport">
-      <div className="brand"><span className={`lamp ${playing ? 'running' : ''}`} /> SIGNAL RACK <small>0.4 · SEED / PULSE / MODULATION</small></div>
+      <div className="brand"><span className={`lamp ${playing ? 'running' : ''}`} /> SIGNAL RACK <small>{mode === 'generator-lab' ? '0.4 · GENERATOR LAB' : '0.4 · SEED / PULSE / MODULATION'}</small></div>
       <div className="transport-controls">
         <label>BPM<input aria-label="BPM" type="number" min="60" max="220" value={bpm} onChange={(event) => updateBpm(Number(event.target.value))} /></label>
-        <button className="play" onClick={startTransport} disabled={armedCount === 0 || playing}>▶ PLAY</button>
+        <button className="play" onClick={startTransport} disabled={mode === 'generator-lab' || armedCount === 0 || playing}>▶ PLAY</button>
         <button className="stop" onClick={stopTransport} disabled={!playing}>■ STOP</button>
       </div>
-      <div className="rack-status"><span>{armedCount}/2 INSTRUMENTS ARMED</span><button className="refresh" onClick={refreshOutputs} title="Rescan MIDI output devices">↻ MIDI</button></div>
+      <div className="rack-status"><span>{armedCount}/2 INSTRUMENTS ARMED</span><button className={mode === 'generator-lab' ? 'mode selected' : 'mode'} onClick={() => mode === 'generator-lab' ? exitGeneratorLab() : enterGeneratorLab()}>{mode === 'generator-lab' ? 'RACK MODE' : 'GENERATOR LAB'}</button><button className="refresh" onClick={refreshOutputs} title="Rescan MIDI output devices">↻ MIDI</button></div>
     </header>
 
-    <section className="rack rack-stack">
-      <SeedLab settings={seedSettings} onSettings={setSeedSettings} onSeed={seedRack} lastSeed={lastSeed} seedCount={seedCount} busy={seedBusy} />
+    <section className={`rack rack-stack ${mode === 'generator-lab' ? 'lab-mode' : ''}`}>
+      {mode === 'generator-lab'
+        ? <GeneratorLab settings={seedSettings} bpm={bpm} outputNames={{ digitone: selectedOutputs.digitone === null ? null : outputs[selectedOutputs.digitone] ?? null, digitakt: selectedOutputs.digitakt === null ? null : outputs[selectedOutputs.digitakt] ?? null }} canAudition={armedCount > 0} playingCandidateId={playingCandidateId} onSettings={setSeedSettings} onGenerate={generateLabBatch} onAudition={auditionLabCandidate} onStop={stopTransport} onExport={backend.saveLabSession} onExit={exitGeneratorLab} />
+        : <SeedLab settings={seedSettings} onSettings={setSeedSettings} onSeed={seedRack} lastSeed={lastSeed} seedCount={seedCount} busy={seedBusy} />}
 
       <LfoRack lfos={lfos} levels={lfoLevels} onChange={updateLfo} />
 
