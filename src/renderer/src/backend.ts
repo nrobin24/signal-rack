@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { documentDir, join } from '@tauri-apps/api/path'
+import { save } from '@tauri-apps/plugin-dialog'
 import type { LfoId, RackTarget, SequencerConfig, TrackId } from '../../shared/types'
 import type { GeneratedSeed, SeedSettings } from './seed'
 
@@ -28,6 +30,28 @@ function subscribe<T>(event: string, callback: (payload: T) => void): Promise<Un
   return listen<T>(event, ({ payload }) => callback(payload))
 }
 
+export type LabSessionExport = {
+  path: string
+  fileName: string
+}
+
+async function exportLabSession(sessionId: string, contents: string, previousPath?: string): Promise<LabSessionExport | null> {
+  const suggestedPath = previousPath ?? (window.__SIGNAL_RACK_MOCK__
+    ? `${sessionId}.json`
+    : await join(await documentDir(), `${sessionId}.json`))
+  const selectedPath = window.__SIGNAL_RACK_MOCK__
+    ? await call<string | null>('choose_lab_session_path', { suggestedPath })
+    : await save({
+        title: 'Export Generator Lab Session',
+        defaultPath: suggestedPath,
+        filters: [{ name: 'JSON session', extensions: ['json'] }]
+      })
+
+  if (selectedPath === null) return null
+  const path = await call<string>('save_lab_session', { path: selectedPath, contents })
+  return { path, fileName: path.split(/[\\/]/).pop() ?? path }
+}
+
 export const backend = {
   listOutputs: (): Promise<string[]> => call('list_outputs'),
   getStatus: (): Promise<EngineStatus> => call('get_status'),
@@ -37,7 +61,7 @@ export const backend = {
   start: (): Promise<void> => call('start_transport'),
   stop: (): Promise<void> => call('stop_transport'),
   generateSeed: (settings: SeedSettings, variation: number): Promise<GeneratedSeed> => call('generate_seed', { settings, variation }),
-  saveLabSession: (sessionId: string, contents: string): Promise<string> => call('save_lab_session', { sessionId, contents }),
+  exportLabSession,
   onStep: (callback: (steps: Partial<Record<TrackId, number>>) => void): Promise<UnlistenFn> => subscribe('sequencer-step', callback),
   onLfoLevels: (callback: (levels: Record<LfoId, number>) => void): Promise<UnlistenFn> => subscribe('lfo-levels', callback),
   onStopped: (callback: () => void): Promise<UnlistenFn> => subscribe('sequencer-stopped', callback)

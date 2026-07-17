@@ -15,7 +15,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::{
     lfo::{lfo_value, modulated_value},
-    model::{Groove, LfoId, RackTarget, SceneId, SequencerConfig, TrackConfig, TrackId},
+    model::{DigitaktSceneId, Groove, LfoId, RackTarget, SceneId, SequencerConfig, TrackConfig, TrackId},
 };
 
 #[derive(Clone)]
@@ -443,19 +443,40 @@ impl Engine {
         }
     }
 
-    fn send_tone(&mut self, track: &TrackConfig, value: f64) {
-        self.send_nrpn(
-            RackTarget::Digitone,
-            track.channel,
-            20,
-            20.0 + value * 107.0 / 127.0,
-        );
-        self.send_nrpn(RackTarget::Digitone, track.channel, 78, value * 0.6);
+    fn send_cutoff(&mut self, track: &TrackConfig, value: f64) {
+        match track.target {
+            RackTarget::Digitone => {
+                self.send_nrpn(
+                    RackTarget::Digitone,
+                    track.channel,
+                    20,
+                    20.0 + value * 107.0 / 127.0,
+                );
+            }
+            RackTarget::Digitakt => {
+                let _ = self.send_message(
+                    RackTarget::Digitakt,
+                    &[
+                        0xb0 + track.channel.saturating_sub(1),
+                        74,
+                        value.round().clamp(0.0, 127.0) as u8,
+                    ],
+                );
+            }
+        }
     }
 
-    fn send_space(&mut self, track: &TrackConfig, value: f64) {
-        self.send_nrpn(RackTarget::Digitone, track.channel, 40, value * 0.8);
-        self.send_nrpn(RackTarget::Digitone, track.channel, 39, value * 0.95);
+    fn send_delay(&mut self, track: &TrackConfig, value: f64) {
+        match track.target {
+            RackTarget::Digitone => {
+                self.send_nrpn(RackTarget::Digitone, track.channel, 40, value * 0.8);
+            }
+            RackTarget::Digitakt => {
+                let status = 0xb0 + track.channel.saturating_sub(1);
+                let value = value.round().clamp(0.0, 127.0) as u8;
+                let _ = self.send_message(RackTarget::Digitakt, &[status, 82, value]);
+            }
+        }
     }
 
     fn macro_value(&self, track: &TrackConfig, macro_name: &str) -> f64 {
@@ -478,11 +499,12 @@ impl Engine {
     }
 
     fn send_track_macros(&mut self, track: &TrackConfig) {
-        if track.target != RackTarget::Digitone {
-            return;
+        if track.tone_enabled {
+                self.send_cutoff(track, self.macro_value(track, "tone"));
         }
-        self.send_tone(track, self.macro_value(track, "tone"));
-        self.send_space(track, self.macro_value(track, "space"));
+        if track.space_enabled {
+                self.send_delay(track, self.macro_value(track, "space"));
+        }
     }
 
     fn send_all_macros(&mut self) {
@@ -493,38 +515,49 @@ impl Engine {
     }
 
     fn send_lfo_macros(&mut self) {
-        let tracks: Vec<_> = self
-            .config
-            .tracks
-            .iter()
-            .filter(|track| track.target == RackTarget::Digitone)
-            .cloned()
-            .collect();
+        let tracks: Vec<_> = self.config.tracks.iter().cloned().collect();
         for track in tracks {
-            if track.tone_lfo.is_some() {
-                self.send_tone(&track, self.macro_value(&track, "tone"));
+            if track.tone_enabled && track.tone_lfo.is_some() {
+                self.send_cutoff(&track, self.macro_value(&track, "tone"));
             }
-            if track.space_lfo.is_some() {
-                self.send_space(&track, self.macro_value(&track, "space"));
+            if track.space_enabled && track.space_lfo.is_some() {
+                self.send_delay(&track, self.macro_value(&track, "space"));
             }
         }
     }
 
     fn scene_density(&self, track: &TrackConfig) -> f64 {
-        if track.target != RackTarget::Digitone {
-            return 1.0;
-        }
-        match (self.config.scene, track.id) {
-            (SceneId::Full, _) => 1.0,
-            (SceneId::Bass, TrackId::DnBass) => 1.0,
-            (SceneId::Bass, TrackId::DnVamp) => 0.0,
-            (SceneId::Bass, TrackId::DnPuncture) => 0.25,
-            (SceneId::Space, TrackId::DnBass) => 0.55,
-            (SceneId::Space, TrackId::DnVamp) => 1.0,
-            (SceneId::Space, TrackId::DnPuncture) => 0.4,
-            (SceneId::Drop, TrackId::DnPuncture) => 0.2,
-            (SceneId::Drop, _) => 0.0,
-            _ => 1.0,
+        match track.target {
+            RackTarget::Digitone => match (self.config.scene, track.id) {
+                (SceneId::Full, _) => 1.0,
+                (SceneId::Bass, TrackId::DnBass) => 1.0,
+                (SceneId::Bass, TrackId::DnVamp) => 0.0,
+                (SceneId::Bass, TrackId::DnPuncture) => 0.25,
+                (SceneId::Space, TrackId::DnBass) => 0.55,
+                (SceneId::Space, TrackId::DnVamp) => 1.0,
+                (SceneId::Space, TrackId::DnPuncture) => 0.4,
+                (SceneId::Drop, TrackId::DnPuncture) => 0.2,
+                (SceneId::Drop, _) => 0.0,
+                _ => 1.0,
+            },
+            RackTarget::Digitakt => match (self.config.digitakt_scene, track.id) {
+                (DigitaktSceneId::Full, _) => 1.0,
+                (DigitaktSceneId::Core, TrackId::DkKick | TrackId::DkSnare) => 1.0,
+                (DigitaktSceneId::Core, TrackId::DkClosedHat | TrackId::DkRim) => 0.35,
+                (DigitaktSceneId::Core, TrackId::DkOpenHat) => 0.2,
+                (DigitaktSceneId::Core, TrackId::DkClap) => 0.8,
+                (DigitaktSceneId::Core, TrackId::DkTexture) => 0.0,
+                (DigitaktSceneId::Tops, TrackId::DkKick) => 0.3,
+                (DigitaktSceneId::Tops, TrackId::DkSnare) => 0.55,
+                (DigitaktSceneId::Tops, TrackId::DkClosedHat | TrackId::DkOpenHat) => 1.0,
+                (DigitaktSceneId::Tops, TrackId::DkRim) => 0.75,
+                (DigitaktSceneId::Tops, TrackId::DkClap) => 0.55,
+                (DigitaktSceneId::Tops, TrackId::DkTexture) => 0.8,
+                (DigitaktSceneId::Drop, TrackId::DkKick) => 0.2,
+                (DigitaktSceneId::Drop, TrackId::DkTexture) => 0.35,
+                (DigitaktSceneId::Drop, _) => 0.0,
+                _ => 1.0,
+            },
         }
     }
 
@@ -560,7 +593,8 @@ impl Engine {
         {
             return;
         }
-        for note in &step.notes {
+        let notes = modulated_notes(&step.notes, &track, &self.config.lfos, self.pulse);
+        for note in &notes {
             let _ = self.send_message(
                 track.target,
                 &[0x90 + track.channel.saturating_sub(1), *note, step.velocity],
@@ -575,7 +609,7 @@ impl Engine {
             kind: ScheduledEventKind::NoteOff {
                 target: track.target,
                 channel: track.channel,
-                notes: step.notes,
+                notes,
             },
         });
     }
@@ -682,6 +716,21 @@ impl Engine {
     }
 }
 
+fn modulated_notes(notes: &[u8], track: &TrackConfig, lfos: &[crate::model::LfoConfig], pulse: u64) -> Vec<u8> {
+    if track.target != RackTarget::Digitone {
+        return notes.to_vec();
+    }
+    let octave_offset = track
+        .octave_lfo
+        .and_then(|id| lfos.iter().find(|lfo| lfo.id == id))
+        .map(|lfo| (lfo_value(lfo, pulse) * track.octave_lfo_depth).round() as i16)
+        .unwrap_or(0);
+    notes
+        .iter()
+        .map(|note| (i16::from(*note) + octave_offset * 12).clamp(0, 127) as u8)
+        .collect()
+}
+
 fn groove_offset_ratio(groove: Groove, step: usize) -> f64 {
     match groove {
         Groove::Straight => 0.0,
@@ -732,6 +781,10 @@ fn lfo_id_name(id: LfoId) -> &'static str {
         LfoId::Lfo2 => "lfo-2",
         LfoId::Lfo3 => "lfo-3",
         LfoId::Lfo4 => "lfo-4",
+        LfoId::Lfo5 => "lfo-5",
+        LfoId::Lfo6 => "lfo-6",
+        LfoId::Lfo7 => "lfo-7",
+        LfoId::Lfo8 => "lfo-8",
     }
 }
 
@@ -772,5 +825,37 @@ mod tests {
         let recovered_bpm = 60.0 / interval.as_secs_f64() / 24.0;
         assert!((recovered_bpm - 132.0).abs() < 0.000_001);
         assert_eq!(interval.as_micros(), 18_939);
+    }
+
+    #[test]
+    fn digitone_octave_lfo_snaps_to_octaves_and_clamps_notes() {
+        let track = TrackConfig {
+            id: TrackId::DnBass,
+            target: RackTarget::Digitone,
+            channel: 1,
+            length: 16,
+            groove: Groove::Straight,
+            muted: false,
+            tone: None,
+            space: None,
+            tone_enabled: false,
+            space_enabled: false,
+            tone_lfo: None,
+            space_lfo: None,
+            octave_lfo: Some(LfoId::Lfo1),
+            tone_lfo_depth: 0.0,
+            space_lfo_depth: 0.0,
+            octave_lfo_depth: 2.0,
+            steps: Vec::new(),
+        };
+        let lfos = vec![crate::model::LfoConfig {
+            id: LfoId::Lfo1,
+            shape: crate::model::LfoShape::Square,
+            period: crate::model::LfoPeriod::Quarter,
+            points: Vec::new(),
+        }];
+
+        assert_eq!(modulated_notes(&[48, 120], &track, &lfos, 0), vec![72, 127]);
+        assert_eq!(modulated_notes(&[12, 48], &track, &lfos, 12), vec![0, 24]);
     }
 }

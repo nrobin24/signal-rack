@@ -1,6 +1,6 @@
 # Signal Rack Development Roadmap
 
-Status: active. The Generator Lab foundation in Phase 1.1 is implemented; later repair stages and roadmap phases remain planned unless noted otherwise.
+Status: active. The Generator Lab foundation and the current rack-performance tools are implemented; controlled generator repair and later roadmap phases remain planned unless noted otherwise.
 
 ## Roadmap
 
@@ -17,6 +17,21 @@ The central product rule across every phase is:
 
 Signal Rack should not become a desktop recreation of an Elektron sequencer or a small DAW. Low-level note placement, probability, microtiming, articulation, and parameter movement should primarily be generated from a compact set of musical choices. Manual step editing remains an escape hatch rather than the main workflow.
 
+## Current product baseline
+
+The rack currently includes:
+
+- A Phrase Generator for coordinated ten-lane, four-bar material.
+- Eight clocked modulation sources, including drawn curves and 64/128-bar periods.
+- Twelve Euclidean presets plus custom hit, length, and rotation controls for one lane at a time.
+- A Digitone-only arpeggiator seeded from the generated phrase.
+- One global eight-state Scene Generator controlling coordinated Digitone and Digitakt density profiles.
+- Per-lane cutoff and delay modulation, plus Digitone octave modulation.
+- Collapsible per-instrument MIDI output and channel setup.
+- A Generator Lab scorecard, native Save As export, and warnings for unexported sessions.
+
+The current Scene Generator is a performance layer over one four-bar phrase. The A/B part scenes described in Phase 3 are a separate future system tied to saved arrangement parts.
+
 ## 1. Focused generator repair
 
 The first phase improves the existing generator and establishes a fast human/AI collaboration loop for musical evaluation.
@@ -25,7 +40,7 @@ The goal is not merely to create better presets. The goal is to make it possible
 
 ### 1.1 Generator Lab
 
-Implementation status: the initial lab workflow is available from the app header. It supports focused experiment briefs, frozen 6-12 candidate batches, neutral candidate labels, one-cycle/two-cycle/loop auditioning through the normal MIDI engine, Keep/Maybe/Reject verdicts, quick tags, listening notes, post-verdict detail reveal, and native JSON session export. Candidate A/B comparison and time-specific playback annotations remain follow-up work in Phase 1.2.
+Implementation status: the initial lab workflow is available from the app header. It supports focused experiment briefs, frozen 6-12 candidate batches, neutral candidate labels, one-cycle/two-cycle/loop auditioning through the normal MIDI engine, Keep/Maybe/Reject verdicts, a role-by-dimension scorecard with progressive detail, listening notes, post-verdict detail reveal, and native JSON session export. Candidate A/B comparison and time-specific playback annotations remain follow-up work in Phase 1.2.
 
 Generator Lab should be a dedicated development mode inside Signal Rack. It should use the normal MIDI engine and hardware routing, but replace the normal Seed interface with a listening and evaluation workflow.
 
@@ -59,7 +74,7 @@ Primary controls:
 - Play one cycle, two cycles, or loop continuously.
 - Compare candidate A against candidate B.
 - Keep, Maybe, or Reject.
-- Add quick tags.
+- Add quick scorecard ratings.
 - Add a freeform note.
 - Reveal candidate details after labeling.
 
@@ -76,28 +91,18 @@ After evaluation, the interface may reveal:
 - Whether the candidate was a baseline, regression fixture, or experiment.
 - A concise description of what changed.
 
-#### Fast evaluation tags
+#### Fast evaluation scorecard
 
-The initial tag vocabulary should stay small and directly actionable:
+The first-pass evaluation should be psychologically cheap and structurally consistent. A compact matrix uses Full Rack, Drums, Bass, Harmony, and Puncture as rows, with Pitch, Groove, Step Placement, and Development as columns. Each applicable cell is Good, Bad, or left blank when the listener has no strong judgment. Development means whether the role evolves appropriately across four bars without losing its identity.
 
-- Groove lurches.
-- Too stiff.
-- Too busy.
-- Too empty.
-- Kick/snare relationship wrong.
-- Hats feel wrong.
-- Good pocket.
-- Harmony too dissonant.
-- Harmony too static.
-- Harmony too busy.
-- Good chord movement.
-- Bar 3 does nothing.
-- Bad turn.
-- Good four-bar shape.
-- Bass/harmony conflict.
-- Sound-patch problem, not sequence.
+Selecting Bad progressively reveals one optional standardized cause for that dimension:
 
-The last tag helps prevent the generator from being blamed for an unsuitable or inconsistent hardware patch.
+- Pitch: Outside key; Chord clash; Register.
+- Groove: Too stiff; Lurches; Wrong feel.
+- Placement: Too busy; Too empty; Wrong moment.
+- Development: Too static; Too random; Bad turn.
+
+This keeps the default interaction fast while preserving actionable, role-scoped signal when a problem is obvious. Hardware patch, tuning, and monitoring problems belong in the session setup or freeform note rather than the generator evaluation.
 
 #### Time-specific annotations
 
@@ -119,7 +124,7 @@ Evaluation data should be plain, structured, replayable, and easy for an agent t
 | --- | --- |
 | Session | Goal, hypothesis, target style, hardware setup, BPM, generator version, and candidate IDs |
 | Candidate | Input settings, seed, full generated arrangement, timing data, implementation label, and hardware state |
-| Evaluation | Verdict, tags, freeform note, annotated bar/step, and listening duration |
+| Evaluation | Verdict, scorecard ratings, optional causes, freeform note, annotated bar/step, and listening duration |
 | Comparison | Candidate pair, preference, and strength of preference |
 | Summary | Agent-generated findings, next hypothesis, unresolved questions, and promoted fixtures |
 
@@ -299,7 +304,7 @@ A repaired style or vocabulary graduates when:
 - Known-good styles have not regressed.
 - Several complete candidates are promoted as replayable golden fixtures.
 
-Evaluation statistics such as rejection rate and common tags are useful signals, not claims of objective musical quality.
+Evaluation statistics such as rejection rate and common scorecard ratings are useful signals, not claims of objective musical quality.
 
 ## 2. Behringer Pro-1 and RD-6 instruments
 
@@ -778,6 +783,6 @@ The first listening session should:
 
 1. Reproduce the good House, Dub, Jungle, and UK Bass judgments.
 2. Reproduce the Broken Pocket, Footwork, and Electro failures.
-3. Verify that fast tags and freeform annotations capture the reasons for those judgments.
+3. Verify that scorecard ratings, optional causes, and freeform annotations capture the reasons for those judgments.
 4. Produce the first reference-good and reference-bad fixtures.
 5. Select Electro as the first controlled repair experiment.

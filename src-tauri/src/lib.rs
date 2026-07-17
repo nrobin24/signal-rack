@@ -4,6 +4,7 @@ mod lfo;
 mod model;
 
 use std::fs;
+use std::path::PathBuf;
 use tauri::{AppHandle, Manager, State, WindowEvent};
 
 use engine::{EngineState, EngineStatus};
@@ -59,42 +60,31 @@ fn generate_seed(settings: SeedSettings, variation: u32) -> GeneratedSeed {
 }
 
 #[tauri::command]
-fn save_lab_session(
-    app: AppHandle,
-    session_id: String,
-    contents: String,
-) -> Result<String, String> {
-    let safe_id = sanitize_session_id(&session_id)?;
-    let directory = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| format!("could not locate app data directory: {error}"))?
-        .join("generator-lab")
-        .join("sessions");
-    fs::create_dir_all(&directory)
-        .map_err(|error| format!("could not create Generator Lab session directory: {error}"))?;
-    let path = directory.join(format!("{safe_id}.json"));
+fn save_lab_session(path: String, contents: String) -> Result<String, String> {
+    let path = normalized_json_path(&path)?;
     fs::write(&path, contents)
         .map_err(|error| format!("could not save Generator Lab session: {error}"))?;
     Ok(path.to_string_lossy().into_owned())
 }
 
-fn sanitize_session_id(session_id: &str) -> Result<String, String> {
-    if session_id.is_empty()
-        || !session_id
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
-    {
-        return Err(
-            "session ID may contain only letters, numbers, hyphens, and underscores".into(),
-        );
+fn normalized_json_path(path: &str) -> Result<PathBuf, String> {
+    let mut path = PathBuf::from(path);
+    if path.file_name().is_none() {
+        return Err("choose a filename for the Generator Lab session".into());
     }
-    Ok(session_id.to_owned())
+    if !path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+    {
+        path.set_extension("json");
+    }
+    Ok(path)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(EngineState::default())
         .invoke_handler(tauri::generate_handler![
             list_outputs,
@@ -119,15 +109,20 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::sanitize_session_id;
+    use std::path::PathBuf;
+
+    use super::normalized_json_path;
 
     #[test]
-    fn lab_session_ids_cannot_escape_the_session_directory() {
+    fn lab_session_exports_always_use_json_files() {
         assert_eq!(
-            sanitize_session_id("generator-lab-2026-07-16").unwrap(),
-            "generator-lab-2026-07-16"
+            normalized_json_path("/tmp/generator-lab-2026-07-16").unwrap(),
+            PathBuf::from("/tmp/generator-lab-2026-07-16.json")
         );
-        assert!(sanitize_session_id("../outside").is_err());
-        assert!(sanitize_session_id("").is_err());
+        assert_eq!(
+            normalized_json_path("/tmp/session.JSON").unwrap(),
+            PathBuf::from("/tmp/session.JSON")
+        );
+        assert!(normalized_json_path("").is_err());
     }
 }
