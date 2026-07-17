@@ -1,10 +1,10 @@
-import type { DigitoneTrackId, Step } from '../../shared/types'
+import type { GeneratorTarget, Step } from '../../shared/types'
 
 export type ArpeggioDirection = 'up' | 'down' | 'up-down' | 'random'
 export type ArpeggioTriggers = 'keep' | 'every-2' | 'every-1'
 
 export type ArpeggioSettings = {
-  trackId: DigitoneTrackId
+  trackId: GeneratorTarget
   pitchClasses: number[]
   lowOctave: number
   highOctave: number

@@ -1,4 +1,5 @@
 export type RackTarget = 'digitone' | 'digitakt'
+export type GeneratorTarget = 'all' | 'all-digitone' | 'all-digitakt' | TrackId
 export type DigitoneTrackId = 'dn-bass' | 'dn-vamp' | 'dn-puncture'
 export type DigitaktTrackId =
   | 'dk-kick'

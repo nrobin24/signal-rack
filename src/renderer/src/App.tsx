@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { DigitaktSceneId, DigitaktTrackId, DigitoneTrackId, Groove, LfoConfig, LfoId, LfoPeriod, LfoPoint, LfoShape, RackTarget, SceneId, SequencerConfig, Step, TrackConfig, TrackId } from '../../shared/types'
+import type { DigitaktSceneId, DigitaktTrackId, DigitoneTrackId, GeneratorTarget, Groove, LfoConfig, LfoId, LfoPeriod, LfoPoint, LfoShape, RackTarget, SceneId, SequencerConfig, Step, TrackConfig, TrackId } from '../../shared/types'
 import { backend } from './backend'
 import GeneratorLab, { type LabCandidate, type LabCycleMode } from './GeneratorLab'
 import {
@@ -20,7 +20,7 @@ import {
 } from './seed'
 import { lfoPeriodLabels } from './modulation'
 import { euclideanPattern, euclideanPresets, replaceWithEuclideanSteps, type EuclideanSettings } from './euclidean'
-import { applyArpeggio as applyArpeggioToSteps, phrasePitchClasses, pitchClassLabels, type ArpeggioDirection, type ArpeggioSettings, type ArpeggioTriggers } from './arpeggio'
+import { applyArpeggio as applyArpeggioToSteps, pitchClassLabels, type ArpeggioDirection, type ArpeggioSettings, type ArpeggioTriggers } from './arpeggio'
 
 type Color = 'orange' | 'cyan' | 'violet' | 'lime' | 'rose' | 'blue' | 'teal' | 'amber' | 'pink' | 'sand'
 type DigitoneTrack = TrackConfig & {
@@ -48,16 +48,19 @@ type SelectedDrumStep = { trackId: DigitaktTrackId; index: number | null }
 type OutputSelection = Record<RackTarget, number | null>
 type SequenceView = 'detail' | 'overview'
 type AppMode = 'rack' | 'generator-lab'
-type UnifiedSceneId = 'full' | 'core' | 'bass' | 'space' | 'tops' | 'drums' | 'melody' | 'drop'
+type SceneSequenceId = 'intro' | 'groove' | 'build' | 'drop' | 'break' | 'rise' | 'peak' | 'outro'
+type UnifiedSceneId = 'full' | SceneSequenceId
+type SceneBarLength = 4 | 8 | 16 | 32 | 64
+type ArpeggioScale = 'minor' | 'dorian' | 'phrygian' | 'major' | 'mixolydian' | 'chromatic'
 
 const stepCount = 64
 const pageSize = 16
 const pageCount = stepCount / pageSize
 const sequenceLengths = [8, 10, 12, 14, 16, 24, 32, 48, 64]
 const euclideanFallbackNotes: Record<TrackId, number[]> = {
-  'dn-bass': [38],
-  'dn-vamp': [53, 60, 64],
-  'dn-puncture': [74],
+  'dn-bass': [37],
+  'dn-vamp': [52, 59, 63],
+  'dn-puncture': [73],
   'dk-kick': [60],
   'dk-snare': [60],
   'dk-closed-hat': [60],
@@ -74,17 +77,17 @@ const initialDigitoneTracks: DigitoneTrack[] = [
   {
     id: 'dn-bass', target: 'digitone', label: 'T1 / BASS', shortLabel: 'BASS', color: 'orange', channel: 1, octave: 0, length: 14,
     groove: 'straight', muted: false, tone: 62, space: 18,
-    steps: defaultSteps([[38], null, [38], null, [41], null, [36], null, [38], null, [45], null, [36], null, [41], null], 106, 58)
+    steps: defaultSteps([[37], null, [37], null, [40], null, [35], null, [37], null, [44], null, [35], null, [40], null], 106, 58)
   },
   {
     id: 'dn-vamp', target: 'digitone', label: 'T2 / VAMP', shortLabel: 'VAMP', color: 'cyan', channel: 2, octave: 0, length: 16,
     groove: 'late', muted: false, tone: 74, space: 62,
-    steps: defaultSteps([null, null, [53, 60, 64], null, null, [60, 65, 67], null, null, null, null, null, [53, 60, 64], null, [59, 64, 69], null, null], 84, 42)
+    steps: defaultSteps([null, null, [52, 59, 63], null, null, [59, 64, 66], null, null, null, null, null, [52, 59, 63], null, [58, 63, 68], null, null], 84, 42)
   },
   {
     id: 'dn-puncture', target: 'digitone', label: 'T3 / PUNCTURE', shortLabel: 'PUNCTURE', color: 'violet', channel: 3, octave: 0, length: 12,
     groove: 'broken', muted: false, tone: 96, space: 41,
-    steps: defaultSteps([[74], null, null, [81], null, [77], null, null, [74], null, [86], null, null, null, [77], null], 78, 26, 68)
+    steps: defaultSteps([[73], null, null, [80], null, [76], null, null, [73], null, [85], null, null, null, [76], null], 78, 26, 68)
   }
 ]
 
@@ -110,14 +113,10 @@ const initialLfos: LfoConfig[] = [
   { id: 'lfo-1', shape: 'triangle', period: 'bars-4' },
   { id: 'lfo-2', shape: 'sine', period: 'bars-16' },
   { id: 'lfo-3', shape: 'drawn', period: 'bars-4', points: [{ x: 0, y: -0.25 }, { x: 0.125, y: 0.8 }, { x: 0.3125, y: -0.55 }, { x: 0.5, y: 0.2 }, { x: 0.6875, y: 1 }, { x: 0.875, y: -0.7 }, { x: 1, y: -0.25 }] },
-  { id: 'lfo-4', shape: 'drawn', period: 'bars-4', points: [{ x: 0, y: 0.6 }, { x: 0.1875, y: -0.9 }, { x: 0.375, y: -0.2 }, { x: 0.5625, y: 0.85 }, { x: 0.75, y: 0.15 }, { x: 0.9375, y: -0.65 }, { x: 1, y: 0.6 }] },
-  { id: 'lfo-5', shape: 'ramp-up', period: 'bars-8' },
-  { id: 'lfo-6', shape: 'ramp-down', period: 'bars-16' },
-  { id: 'lfo-7', shape: 'square', period: 'bars-32' },
-  { id: 'lfo-8', shape: 'random', period: 'bars-64' }
+  { id: 'lfo-4', shape: 'drawn', period: 'bars-4', points: [{ x: 0, y: 0.6 }, { x: 0.1875, y: -0.9 }, { x: 0.375, y: -0.2 }, { x: 0.5625, y: 0.85 }, { x: 0.75, y: 0.15 }, { x: 0.9375, y: -0.65 }, { x: 1, y: 0.6 }] }
 ]
 
-const lfoIds: LfoId[] = ['lfo-1', 'lfo-2', 'lfo-3', 'lfo-4', 'lfo-5', 'lfo-6', 'lfo-7', 'lfo-8']
+const lfoIds: LfoId[] = ['lfo-1', 'lfo-2', 'lfo-3', 'lfo-4']
 const zeroLfoLevels: Record<LfoId, number> = { 'lfo-1': 0, 'lfo-2': 0, 'lfo-3': 0, 'lfo-4': 0, 'lfo-5': 0, 'lfo-6': 0, 'lfo-7': 0, 'lfo-8': 0 }
 
 const lfoShapeLabels: Record<LfoShape, string> = {
@@ -126,14 +125,32 @@ const lfoShapeLabels: Record<LfoShape, string> = {
 
 const unifiedSceneInfo: Record<UnifiedSceneId, { label: string; digitone: SceneId; digitakt: DigitaktSceneId }> = {
   full: { label: 'FULL', digitone: 'full', digitakt: 'full' },
-  core: { label: 'CORE', digitone: 'full', digitakt: 'core' },
-  bass: { label: 'BASS', digitone: 'bass', digitakt: 'core' },
-  space: { label: 'SPACE', digitone: 'space', digitakt: 'tops' },
-  tops: { label: 'TOPS', digitone: 'full', digitakt: 'tops' },
-  drums: { label: 'DRUMS', digitone: 'drop', digitakt: 'full' },
-  melody: { label: 'MELODY', digitone: 'full', digitakt: 'drop' },
-  drop: { label: 'DROP', digitone: 'drop', digitakt: 'drop' }
+  intro: { label: 'INTRO', digitone: 'drop', digitakt: 'drop' },
+  groove: { label: 'GROOVE', digitone: 'bass', digitakt: 'core' },
+  build: { label: 'BUILD', digitone: 'space', digitakt: 'core' },
+  drop: { label: 'DROP', digitone: 'full', digitakt: 'full' },
+  break: { label: 'BREAK', digitone: 'space', digitakt: 'drop' },
+  rise: { label: 'RISE', digitone: 'bass', digitakt: 'tops' },
+  peak: { label: 'PEAK', digitone: 'full', digitakt: 'tops' },
+  outro: { label: 'OUTRO', digitone: 'bass', digitakt: 'drop' }
 }
+const sceneSequence: SceneSequenceId[] = ['intro', 'groove', 'build', 'drop', 'break', 'rise', 'peak', 'outro']
+const initialSceneEnabled: Record<SceneSequenceId, boolean> = { intro: true, groove: true, build: true, drop: true, break: true, rise: true, peak: true, outro: true }
+
+type SceneImpactGroup = { label: string; parts: Array<{ label: string; level: number }> }
+const digitoneImpact: Record<SceneId, SceneImpactGroup> = {
+  full: { label: 'DIGITONE', parts: [{ label: 'BASS', level: 1 }, { label: 'VAMP', level: 1 }, { label: 'PUNCTURE', level: 1 }] },
+  bass: { label: 'DIGITONE', parts: [{ label: 'BASS', level: 1 }, { label: 'VAMP', level: 0 }, { label: 'PUNCTURE', level: .25 }] },
+  space: { label: 'DIGITONE', parts: [{ label: 'BASS', level: .55 }, { label: 'VAMP', level: 1 }, { label: 'PUNCTURE', level: .4 }] },
+  drop: { label: 'DIGITONE', parts: [{ label: 'BASS', level: 0 }, { label: 'VAMP', level: 0 }, { label: 'PUNCTURE', level: .2 }] }
+}
+const digitaktImpact: Record<DigitaktSceneId, SceneImpactGroup> = {
+  full: { label: 'DIGITAKT', parts: [{ label: 'KICK', level: 1 }, { label: 'SNARE', level: 1 }, { label: 'HATS', level: 1 }, { label: 'RIM', level: 1 }, { label: 'CLAP', level: 1 }, { label: 'TEXTURE', level: 1 }] },
+  core: { label: 'DIGITAKT', parts: [{ label: 'KICK', level: 1 }, { label: 'SNARE', level: 1 }, { label: 'HATS', level: .35 }, { label: 'RIM', level: .35 }, { label: 'CLAP', level: .8 }, { label: 'TEXTURE', level: 0 }] },
+  tops: { label: 'DIGITAKT', parts: [{ label: 'KICK', level: .3 }, { label: 'SNARE', level: .55 }, { label: 'HATS', level: 1 }, { label: 'RIM', level: .75 }, { label: 'CLAP', level: .55 }, { label: 'TEXTURE', level: .8 }] },
+  drop: { label: 'DIGITAKT', parts: [{ label: 'KICK', level: .2 }, { label: 'SNARE', level: 0 }, { label: 'HATS', level: 0 }, { label: 'RIM', level: 0 }, { label: 'CLAP', level: 0 }, { label: 'TEXTURE', level: .35 }] }
+}
+const sceneImpact = (id: UnifiedSceneId): SceneImpactGroup[] => [digitoneImpact[unifiedSceneInfo[id].digitone], digitaktImpact[unifiedSceneInfo[id].digitakt]]
 
 export default function App(): React.JSX.Element {
   const [mode, setMode] = useState<AppMode>('rack')
@@ -148,6 +165,9 @@ export default function App(): React.JSX.Element {
   const [instrumentMutes, setInstrumentMutes] = useState<Record<RackTarget, boolean>>({ digitone: false, digitakt: false })
   const [lfos, setLfos] = useState<LfoConfig[]>(initialLfos)
   const [activeScene, setActiveScene] = useState<UnifiedSceneId>('full')
+  const [sceneEnabled, setSceneEnabled] = useState<Record<SceneSequenceId, boolean>>(initialSceneEnabled)
+  const [sceneAutoAdvance, setSceneAutoAdvance] = useState(false)
+  const [sceneBars, setSceneBars] = useState<SceneBarLength>(16)
   const scene = unifiedSceneInfo[activeScene].digitone
   const digitaktScene = unifiedSceneInfo[activeScene].digitakt
   const [selectedStep, setSelectedStep] = useState<SelectedStep>({ trackId: 'dn-bass', index: null })
@@ -156,25 +176,30 @@ export default function App(): React.JSX.Element {
   const [digitonePage, setDigitonePage] = useState(0)
   const [digitaktView, setDigitaktView] = useState<SequenceView>('detail')
   const [digitaktPage, setDigitaktPage] = useState(0)
-  const [seedSettings, setSeedSettings] = useState<SeedSettings>({ root: 2, harmony: 'dorian', bassRole: 'anchor', rhythm: 'broken', energy: 'medium', shape: 'aa-turn', leader: 'bass', cycleMode: 'auto' })
+  const [seedSettings, setSeedSettings] = useState<SeedSettings>({ root: 1, harmony: 'house', bassRole: 'answer', rhythm: 'uk-bass', energy: 'medium', shape: 'aa-turn', leader: 'bass', cycleMode: 'auto' })
   const [lastSeed, setLastSeed] = useState('No generated phrase yet')
   const [seedBusy, setSeedBusy] = useState(false)
-  const [arpeggioPitchClasses, setArpeggioPitchClasses] = useState<number[]>(() => phrasePitchClasses(initialDigitoneTracks, 2))
+  const [arpeggioRootSync, setArpeggioRootSync] = useState({ root: seedSettings.root, revision: 0 })
   const [playingCandidateId, setPlayingCandidateId] = useState<string | null>(null)
   const [labHasUnexportedSession, setLabHasUnexportedSession] = useState(false)
   const seedVariation = useRef(0)
   const latestSeedRequest = useRef(0)
   const labStopTimer = useRef<number | null>(null)
+  const sceneAutomationRef = useRef({ enabled: sceneAutoAdvance, bars: sceneBars, scenes: sceneEnabled, active: activeScene })
+  const chooseSceneRef = useRef<(scene: UnifiedSceneId) => void>(() => {})
+  sceneAutomationRef.current = { enabled: sceneAutoAdvance, bars: sceneBars, scenes: sceneEnabled, active: activeScene }
 
   useEffect(() => {
     let disposed = false
     let unsubscribeStep: (() => void) | undefined
     let unsubscribeLfo: (() => void) | undefined
     let unsubscribeStop: (() => void) | undefined
-    void Promise.all([backend.listOutputs(), backend.getStatus(), backend.onStep((steps) => setCurrentSteps(steps)), backend.onLfoLevels((levels) => setLfoLevels((current) => ({ ...current, ...levels }))), backend.onStopped(() => { if (labStopTimer.current !== null) { window.clearTimeout(labStopTimer.current); labStopTimer.current = null } setPlaying(false); setPlayingCandidateId(null); setCurrentSteps({}); setLfoLevels({ ...zeroLfoLevels }) })]).then(([nextOutputs, status, nextUnsubscribeStep, nextUnsubscribeLfo, nextUnsubscribeStop]) => {
-      if (disposed) { nextUnsubscribeStep(); nextUnsubscribeLfo(); nextUnsubscribeStop(); return }
+    let unsubscribeClock: (() => void) | undefined
+    void Promise.all([backend.listOutputs(), backend.getStatus(), backend.onStep((steps) => setCurrentSteps(steps)), backend.onLfoLevels((levels) => setLfoLevels((current) => ({ ...current, ...levels }))), backend.onClockStep((globalStep) => { const automation = sceneAutomationRef.current; if (!automation.enabled || globalStep === 0 || globalStep % (automation.bars * 16) !== 0) return; const enabledScenes = sceneSequence.filter((id) => automation.scenes[id]); if (!enabledScenes.length) return; const currentIndex = enabledScenes.indexOf(automation.active as SceneSequenceId); chooseSceneRef.current(enabledScenes[(currentIndex + 1) % enabledScenes.length]) }), backend.onStopped(() => { if (labStopTimer.current !== null) { window.clearTimeout(labStopTimer.current); labStopTimer.current = null } setPlaying(false); setPlayingCandidateId(null); setCurrentSteps({}); setLfoLevels({ ...zeroLfoLevels }) })]).then(([nextOutputs, status, nextUnsubscribeStep, nextUnsubscribeLfo, nextUnsubscribeClock, nextUnsubscribeStop]) => {
+      if (disposed) { nextUnsubscribeStep(); nextUnsubscribeLfo(); nextUnsubscribeClock(); nextUnsubscribeStop(); return }
       unsubscribeStep = nextUnsubscribeStep
       unsubscribeLfo = nextUnsubscribeLfo
+      unsubscribeClock = nextUnsubscribeClock
       unsubscribeStop = nextUnsubscribeStop
       setOutputs(nextOutputs)
       setSelectedOutputs({
@@ -183,7 +208,7 @@ export default function App(): React.JSX.Element {
       })
       setPlaying(status.playing)
     }).catch(console.error)
-    return () => { disposed = true; if (labStopTimer.current !== null) window.clearTimeout(labStopTimer.current); unsubscribeStep?.(); unsubscribeLfo?.(); unsubscribeStop?.() }
+    return () => { disposed = true; if (labStopTimer.current !== null) window.clearTimeout(labStopTimer.current); unsubscribeStep?.(); unsubscribeLfo?.(); unsubscribeClock?.(); unsubscribeStop?.() }
   }, [])
 
   function config(nextDigitone = digitoneTracks, nextDigitakt = digitaktTracks, nextScene = scene, nextBpm = bpm, nextLfos = lfos, nextInstrumentMutes = instrumentMutes, nextDigitaktScene = digitaktScene): SequencerConfig {
@@ -262,6 +287,7 @@ export default function App(): React.JSX.Element {
     setActiveScene(nextScene)
     if (playing) void backend.configure(config(digitoneTracks, digitaktTracks, preset.digitone, bpm, lfos, instrumentMutes, preset.digitakt))
   }
+  chooseSceneRef.current = chooseScene
 
   function changeMacro(trackId: TrackId, macro: 'tone' | 'space', value: number): void {
     const current = [...digitoneTracks, ...digitaktTracks].find((track) => track.id === trackId)
@@ -311,7 +337,7 @@ export default function App(): React.JSX.Element {
     })
   }
 
-  async function seedRack(): Promise<void> {
+  async function seedRack(target: GeneratorTarget): Promise<void> {
     const variation = seedVariation.current + 1
     seedVariation.current = variation
     const request = latestSeedRequest.current + 1
@@ -322,7 +348,8 @@ export default function App(): React.JSX.Element {
       const generated = await backend.generateSeed(seedSettings, variation)
       if (request !== latestSeedRequest.current) return
 
-      await applyGeneratedSeed(generated)
+      await applyGeneratedSeed(generated, target)
+      setArpeggioRootSync((current) => ({ root: seedSettings.root, revision: current.revision + 1 }))
       setLastSeed(generated.summary)
     } catch (error: unknown) {
       console.error(error)
@@ -341,8 +368,8 @@ export default function App(): React.JSX.Element {
       length: steps,
       steps: replaceWithEuclideanSteps(track.steps, { hits, steps, rotation }, euclideanFallbackNotes[track.id])
     })
-    const nextDigitone = digitoneTracks.map((track) => track.id === settings.trackId ? replace(track) : track)
-    const nextDigitakt = digitaktTracks.map((track) => track.id === settings.trackId ? replace(track) : track)
+    const nextDigitone = digitoneTracks.map((track) => targetIncludes(settings.trackId, track.id) ? replace(track) : track)
+    const nextDigitakt = digitaktTracks.map((track) => targetIncludes(settings.trackId, track.id) ? replace(track) : track)
 
     setDigitoneTracks(nextDigitone)
     setDigitaktTracks(nextDigitakt)
@@ -350,28 +377,31 @@ export default function App(): React.JSX.Element {
   }
 
   function applyArpeggio(settings: ArpeggioSettings): void {
-    const nextDigitone = digitoneTracks.map((track) => track.id === settings.trackId
+    const nextDigitone = digitoneTracks.map((track) => targetIncludes(settings.trackId, track.id)
+      ? { ...track, steps: applyArpeggioToSteps(track.steps, track.length, settings) }
+      : track)
+    const nextDigitakt = digitaktTracks.map((track) => targetIncludes(settings.trackId, track.id)
       ? { ...track, steps: applyArpeggioToSteps(track.steps, track.length, settings) }
       : track)
     setDigitoneTracks(nextDigitone)
-    void backend.configure(config(nextDigitone))
+    setDigitaktTracks(nextDigitakt)
+    void backend.configure(config(nextDigitone, nextDigitakt))
   }
 
-  async function applyGeneratedSeed(generated: Awaited<ReturnType<typeof backend.generateSeed>>): Promise<{ nextDigitone: DigitoneTrack[]; nextDigitakt: DigitaktTrack[] }> {
+  async function applyGeneratedSeed(generated: Awaited<ReturnType<typeof backend.generateSeed>>, target: GeneratorTarget = 'all'): Promise<{ nextDigitone: DigitoneTrack[]; nextDigitakt: DigitaktTrack[] }> {
     const generatedById = new Map(generated.tracks.map((track) => [track.id, track]))
     const nextDigitone = digitoneTracks.map((track) => {
       const next = generatedById.get(track.id)
-      return next ? { ...track, length: next.length, groove: next.groove, steps: normalizeSteps(next.steps), tone: next.tone ?? track.tone, space: next.space ?? track.space } : track
+      return next && targetIncludes(target, track.id) ? { ...track, length: next.length, groove: next.groove, steps: normalizeSteps(next.steps), tone: next.tone ?? track.tone, space: next.space ?? track.space } : track
     })
     const nextDigitakt = digitaktTracks.map((track) => {
       const next = generatedById.get(track.id)
-      return next ? { ...track, length: next.length, groove: next.groove, steps: normalizeSteps(next.steps) } : track
+      return next && targetIncludes(target, track.id) ? { ...track, length: next.length, groove: next.groove, steps: normalizeSteps(next.steps) } : track
     })
     setDigitoneTracks(nextDigitone)
     setDigitaktTracks(nextDigitakt)
-    setArpeggioPitchClasses(phrasePitchClasses(generated.tracks, seedSettings.root))
     await backend.configure(config(nextDigitone, nextDigitakt))
-    await Promise.all([...nextDigitone, ...nextDigitakt].map((track) => backend.setMacros(track.id, track.tone, track.space)))
+    await Promise.all([...nextDigitone, ...nextDigitakt].filter((track) => targetIncludes(target, track.id)).map((track) => backend.setMacros(track.id, track.tone, track.space)))
     return { nextDigitone, nextDigitakt }
   }
 
@@ -429,58 +459,61 @@ export default function App(): React.JSX.Element {
     </header>
 
     <section className={`rack rack-stack ${mode === 'generator-lab' ? 'lab-mode' : ''}`}>
+      <div className="generator-column">
       {mode === 'generator-lab'
         ? <GeneratorLab settings={seedSettings} bpm={bpm} outputNames={{ digitone: selectedOutputs.digitone === null ? null : outputs[selectedOutputs.digitone] ?? null, digitakt: selectedOutputs.digitakt === null ? null : outputs[selectedOutputs.digitakt] ?? null }} canAudition={armedCount > 0} playingCandidateId={playingCandidateId} onSettings={setSeedSettings} onGenerate={generateLabBatch} onAudition={auditionLabCandidate} onStop={stopTransport} onExport={backend.exportLabSession} onUnexportedChange={setLabHasUnexportedSession} onExit={exitGeneratorLab} />
         : <SeedLab settings={seedSettings} onSettings={setSeedSettings} onSeed={seedRack} lastSeed={lastSeed} busy={seedBusy} />}
 
-      <LfoRack lfos={lfos} levels={lfoLevels} onChange={updateLfo} />
-
       {mode === 'rack' && <EuclideanGenerator digitoneTracks={digitoneTracks} digitaktTracks={digitaktTracks} onGenerate={applyEuclidean} />}
 
-      {mode === 'rack' && <ArpeggioGenerator digitoneTracks={digitoneTracks} seedPitchClasses={arpeggioPitchClasses} onGenerate={applyArpeggio} />}
+      {mode === 'rack' && <ArpeggioGenerator digitoneTracks={digitoneTracks} digitaktTracks={digitaktTracks} rootSync={arpeggioRootSync} onGenerate={applyArpeggio} />}
 
-      {mode === 'rack' && <SceneGenerator selected={activeScene} onSelect={chooseScene} />}
+      <LfoRack lfos={lfos} levels={lfoLevels} onChange={updateLfo} />
+      </div>
 
-      <RackFrame className={`digitone-module instrument-module ${instrumentMutes.digitone ? 'module-muted' : ''}`}>
+      <div className="instrument-column">
+      {mode === 'rack' && <SceneMixer selected={activeScene} enabled={sceneEnabled} autoAdvance={sceneAutoAdvance} bars={sceneBars} onSelect={chooseScene} onEnabled={(id) => setSceneEnabled((current) => ({ ...current, [id]: !current[id] }))} onAutoAdvance={setSceneAutoAdvance} onBars={setSceneBars} />}
+      <RackFrame className={`digitone-module instrument-module ${selectedOutputs.digitone === null ? 'module-unconfigured' : instrumentMutes.digitone ? 'module-muted' : ''}`}>
         <div className="unit-heading instrument-heading">
           <div className="module-ident">
-            <button className={`instrument-mute ${instrumentMutes.digitone ? 'engaged' : ''}`} aria-pressed={instrumentMutes.digitone} onClick={() => toggleInstrumentMute('digitone')}>{instrumentMutes.digitone ? 'MUTED' : 'MUTE ALL'}</button>
+            <button className={`instrument-mute ${instrumentMutes.digitone || selectedOutputs.digitone === null ? 'engaged' : ''}`} aria-pressed={instrumentMutes.digitone || selectedOutputs.digitone === null} disabled={selectedOutputs.digitone === null} title={selectedOutputs.digitone === null ? 'Select a MIDI output to enable this instrument.' : instrumentMutes.digitone ? 'Unmute Digitone' : 'Mute all Digitone tracks'} onClick={() => toggleInstrumentMute('digitone')}>{instrumentMutes.digitone || selectedOutputs.digitone === null ? 'MUTED' : 'MUTE ALL'}</button>
             <div><h1>DIGITONE</h1></div>
           </div>
-          <ModuleSetup target="digitone" outputs={outputs} selected={selectedOutputs.digitone} tracks={digitoneTracks} onSelect={selectModuleOutput} onChannel={(trackId, channel) => updateDigitoneTrack(trackId as DigitoneTrackId, (track) => ({ ...track, channel }))} />
+          {selectedOutputs.digitone !== null && <SequenceToolbar label="Digitone" view={digitoneView} page={digitonePage} onView={setDigitoneView} onPage={(nextPage) => { setDigitonePage(nextPage); setSelectedStep((current) => ({ ...current, index: null })) }} />}
+          {selectedOutputs.digitone !== null && <ModuleSetup target="digitone" outputs={outputs} selected={selectedOutputs.digitone} tracks={digitoneTracks} onSelect={selectModuleOutput} onChannel={(trackId, channel) => updateDigitoneTrack(trackId as DigitoneTrackId, (track) => ({ ...track, channel }))} />}
         </div>
-        <div className="module-body">
-        <SequenceToolbar label="Digitone" view={digitoneView} page={digitonePage} onView={setDigitoneView} onPage={(nextPage) => { setDigitonePage(nextPage); setSelectedStep((current) => ({ ...current, index: null })) }} />
-
+        {selectedOutputs.digitone === null ? <ModuleConnectionSetup target="digitone" outputs={outputs} selected={selectedOutputs.digitone} tracks={digitoneTracks} onSelect={selectModuleOutput} onChannel={(trackId, channel) => updateDigitoneTrack(trackId as DigitoneTrackId, (track) => ({ ...track, channel }))} /> : <div className="module-body">
         <div className="lanes">
           {digitoneTracks.map((track) => <DigitoneLane key={track.id} track={track} view={digitoneView} page={digitonePage} selected={selectedStep.trackId === track.id ? selectedStep.index : null} currentStep={currentSteps[track.id] ?? null} lfos={lfos} lfoLevels={lfoLevels} onSelect={(index) => { setSelectedStep({ trackId: track.id, index }); setDigitonePage(Math.floor(index / pageSize)) }} onChange={(change) => updateDigitoneTrack(track.id, change)} onMacro={(macro, value) => changeMacro(track.id, macro, value)} onMacroRoute={(macro, source) => changeMacroRoute(track.id, macro, source)} onMacroDepth={(macro, depth) => changeMacroDepth(track.id, macro, depth)} />)}
         </div>
 
         {selectedIndex !== null && selected && <StepEditor track={selectedTrack} index={selectedIndex} step={selected} onClose={() => setSelectedStep((current) => ({ ...current, index: null }))} onChange={(change) => updateDigitoneTrack(selectedTrack.id, (track) => ({ ...track, steps: track.steps.map((step, index) => index === selectedIndex ? change(step) : step) }))} />}
-        </div>
+        </div>}
       </RackFrame>
 
-      <RackFrame className={`digitakt-module instrument-module ${instrumentMutes.digitakt ? 'module-muted' : ''}`}>
+      <RackFrame className={`digitakt-module instrument-module ${selectedOutputs.digitakt === null ? 'module-unconfigured' : instrumentMutes.digitakt ? 'module-muted' : ''}`}>
         <div className="unit-heading instrument-heading">
           <div className="module-ident">
-            <button className={`instrument-mute ${instrumentMutes.digitakt ? 'engaged' : ''}`} aria-pressed={instrumentMutes.digitakt} onClick={() => toggleInstrumentMute('digitakt')}>{instrumentMutes.digitakt ? 'MUTED' : 'MUTE ALL'}</button>
+            <button className={`instrument-mute ${instrumentMutes.digitakt || selectedOutputs.digitakt === null ? 'engaged' : ''}`} aria-pressed={instrumentMutes.digitakt || selectedOutputs.digitakt === null} disabled={selectedOutputs.digitakt === null} title={selectedOutputs.digitakt === null ? 'Select a MIDI output to enable this instrument.' : instrumentMutes.digitakt ? 'Unmute Digitakt' : 'Mute all Digitakt tracks'} onClick={() => toggleInstrumentMute('digitakt')}>{instrumentMutes.digitakt || selectedOutputs.digitakt === null ? 'MUTED' : 'MUTE ALL'}</button>
             <div><h1>DIGITAKT</h1></div>
           </div>
-          <ModuleSetup target="digitakt" outputs={outputs} selected={selectedOutputs.digitakt} tracks={digitaktTracks} onSelect={selectModuleOutput} onChannel={(trackId, channel) => updateDigitaktTrack(trackId as DigitaktTrackId, (track) => ({ ...track, channel }))} />
+          {selectedOutputs.digitakt !== null && <SequenceToolbar label="Digitakt" view={digitaktView} page={digitaktPage} onView={setDigitaktView} onPage={(nextPage) => { setDigitaktPage(nextPage); setSelectedDrumStep((current) => ({ ...current, index: null })) }} />}
+          {selectedOutputs.digitakt !== null && <ModuleSetup target="digitakt" outputs={outputs} selected={selectedOutputs.digitakt} tracks={digitaktTracks} onSelect={selectModuleOutput} onChannel={(trackId, channel) => updateDigitaktTrack(trackId as DigitaktTrackId, (track) => ({ ...track, channel }))} />}
         </div>
-        <div className="module-body">
-        <SequenceToolbar label="Digitakt" view={digitaktView} page={digitaktPage} onView={setDigitaktView} onPage={(nextPage) => { setDigitaktPage(nextPage); setSelectedDrumStep((current) => ({ ...current, index: null })) }} />
+        {selectedOutputs.digitakt === null ? <ModuleConnectionSetup target="digitakt" outputs={outputs} selected={selectedOutputs.digitakt} tracks={digitaktTracks} onSelect={selectModuleOutput} onChannel={(trackId, channel) => updateDigitaktTrack(trackId as DigitaktTrackId, (track) => ({ ...track, channel }))} /> : <div className="module-body">
         <div className="drum-lanes">
           {digitaktTracks.map((track) => <DigitaktLane key={track.id} track={track} view={digitaktView} page={digitaktPage} selected={selectedDrumStep.trackId === track.id ? selectedDrumStep.index : null} currentStep={currentSteps[track.id] ?? null} lfos={lfos} lfoLevels={lfoLevels} onSelect={(index) => { setSelectedDrumStep({ trackId: track.id, index }); setDigitaktPage(Math.floor(index / pageSize)) }} onChange={(change) => updateDigitaktTrack(track.id, change)} onMacro={(macro, value) => changeMacro(track.id, macro, value)} onMacroRoute={(macro, source) => changeMacroRoute(track.id, macro, source)} onMacroDepth={(macro, depth) => changeMacroDepth(track.id, macro, depth)} />)}
         </div>
         {selectedDrumIndex !== null && selectedDrum && <DrumStepEditor track={selectedDrumTrack} index={selectedDrumIndex} step={selectedDrum} onClose={() => setSelectedDrumStep((current) => ({ ...current, index: null }))} onChange={(change) => updateDigitaktTrack(selectedDrumTrack.id, (track) => ({ ...track, steps: track.steps.map((step, index) => index === selectedDrumIndex ? change(step) : step) }))} />}
-        </div>
+        </div>}
       </RackFrame>
+      </div>
     </section>
   </main>
 }
 
-function SeedLab({ settings, onSettings, onSeed, lastSeed, busy }: { settings: SeedSettings; onSettings: (settings: SeedSettings) => void; onSeed: () => void; lastSeed: string; busy: boolean }): React.JSX.Element {
+function SeedLab({ settings, onSettings, onSeed, lastSeed, busy }: { settings: SeedSettings; onSettings: (settings: SeedSettings) => void; onSeed: (target: GeneratorTarget) => void; lastSeed: string; busy: boolean }): React.JSX.Element {
+  const [target, setTarget] = useState<GeneratorTarget>('all')
   const update = <Key extends keyof SeedSettings>(key: Key, value: SeedSettings[Key]): void => onSettings({ ...settings, [key]: value })
   const energyIndex = (['low', 'medium', 'high'] as Energy[]).indexOf(settings.energy)
   return <RackFrame className="seed-module">
@@ -502,14 +535,7 @@ function SeedLab({ settings, onSettings, onSeed, lastSeed, busy }: { settings: S
         {(['auto', 'locked', 'poly'] as CycleMode[]).map((mode) => <button key={mode} className={settings.cycleMode === mode ? 'selected' : ''} aria-pressed={settings.cycleMode === mode} title={mode === 'auto' ? 'One style-aware Digitone cycle drifts against the four-bar frame' : mode === 'locked' ? 'Every generated lane follows the full four-bar frame' : 'Two Digitone cycles drift against the four-bar frame'} onClick={() => update('cycleMode', mode)}>{mode === 'locked' ? 'LOCKED' : mode.toUpperCase()}</button>)}
       </div>
       <strong><small>LAST</small>{lastSeed}</strong>
-      <button
-        className={`seed-action ${busy ? 'working' : ''}`}
-        aria-busy={busy}
-        aria-label={busy ? 'BUILDING PHRASE' : 'GENERATE'}
-        onClick={onSeed}
-      >
-        <strong>{busy ? 'BUILDING…' : 'GENERATE'}</strong>
-      </button>
+      <GeneratorApplyControls label="Phrase" target={target} digitoneTracks={initialDigitoneTracks} digitaktTracks={initialDigitaktTracks} onTarget={setTarget} onApply={() => onSeed(target)} busy={busy} />
     </div>
   </RackFrame>
 }
@@ -535,35 +561,44 @@ function EuclideanGenerator({ digitoneTracks, digitaktTracks, onGenerate }: { di
   return <RackFrame className="euclidean-module">
     <div className="unit-heading euclidean-heading">
       <div><h1>EUCLIDEAN GENERATOR</h1></div>
-      <div className="euclidean-preview" aria-label={`Euclidean pattern E(${settings.hits},${settings.steps}), rotation ${settings.rotation}`}>
-        {pattern.map((hit, index) => <i className={hit ? 'hit' : ''} key={index} title={`Step ${index + 1}: ${hit ? 'hit' : 'rest'}`} />)}
-      </div>
     </div>
-    <div className="euclidean-body">
-      <div className="euclidean-presets" aria-label="Euclidean rhythm shortcuts">
-        {euclideanPresets.map((preset) => <button key={preset.id} className={settings.hits === preset.hits && settings.steps === preset.steps && settings.rotation === preset.rotation ? 'selected' : ''} aria-label={`${preset.label}: ${preset.context}, E(${preset.hits},${preset.steps})`} onClick={() => choosePreset(preset)}><strong>{preset.label}</strong><span>E({preset.hits},{preset.steps})</span></button>)}
-      </div>
-      <div className="euclidean-controls">
+    <div className="generator-widget-row"><div className="generator-widget euclidean-widget"><span className="generator-widget-label">RHYTHM MAP</span><div className="euclidean-preview" aria-label={`Euclidean pattern E(${settings.hits},${settings.steps}), rotation ${settings.rotation}`}>
+        {pattern.map((hit, index) => <i className={hit ? 'hit' : ''} key={index} title={`Step ${index + 1}: ${hit ? 'hit' : 'rest'}`} />)}
+      </div></div><div className="widget-side-controls euclidean-widget-controls">
         <label>HITS<input aria-label="Euclidean hits" type="number" min="1" max={settings.steps} value={settings.hits} onChange={(event) => updateNumber('hits', Number(event.target.value))} /></label>
         <label>STEPS<input aria-label="Euclidean steps" type="number" min="2" max={stepCount} value={settings.steps} onChange={(event) => updateNumber('steps', Number(event.target.value))} /></label>
         <label>ROTATE<input aria-label="Euclidean rotation" type="number" min="0" max={settings.steps - 1} value={settings.rotation} onChange={(event) => updateNumber('rotation', Number(event.target.value))} /></label>
-        <div className="euclidean-apply-group">
-          <label className="euclidean-target">APPLY TO<select aria-label="Euclidean target lane" value={settings.trackId} onChange={(event) => setSettings((current) => ({ ...current, trackId: event.target.value as TrackId }))}>
-            <optgroup label="DIGITONE">{digitoneTracks.map((track) => <option value={track.id} key={track.id}>{track.label}</option>)}</optgroup>
-            <optgroup label="DIGITAKT">{digitaktTracks.map((track) => <option value={track.id} key={track.id}>{track.label}</option>)}</optgroup>
-          </select></label>
-          <button className="euclidean-action" aria-label="APPLY EUCLIDEAN RHYTHM" onClick={generate}><strong>APPLY</strong></button>
-        </div>
+      </div></div>
+    <div className="euclidean-body">
+      <div className="euclidean-presets" aria-label="Euclidean rhythm shortcuts">
+        {euclideanPresets.map((preset) => <button key={preset.id} className={settings.hits === preset.hits && settings.steps === preset.steps && settings.rotation === preset.rotation ? 'selected' : ''} aria-label={`${preset.label}: ${preset.context}, E(${preset.hits},${preset.steps})`} onClick={() => choosePreset(preset)}><strong>{preset.label}</strong></button>)}
+      </div>
+      <div className="euclidean-controls">
+        <GeneratorApplyControls label="Euclidean" target={settings.trackId} digitoneTracks={digitoneTracks} digitaktTracks={digitaktTracks} onTarget={(trackId) => setSettings((current) => ({ ...current, trackId }))} onApply={generate} />
       </div>
     </div>
   </RackFrame>
 }
 
-function ArpeggioGenerator({ digitoneTracks, seedPitchClasses, onGenerate }: { digitoneTracks: DigitoneTrack[]; seedPitchClasses: number[]; onGenerate: (settings: ArpeggioSettings) => void }): React.JSX.Element {
+function ArpeggioGenerator({ digitoneTracks, digitaktTracks, rootSync, onGenerate }: { digitoneTracks: DigitoneTrack[]; digitaktTracks: DigitaktTrack[]; rootSync: { root: number; revision: number }; onGenerate: (settings: ArpeggioSettings) => void }): React.JSX.Element {
+  const [root, setRoot] = useState(rootSync.root)
+  const [scale, setScale] = useState<ArpeggioScale>('minor')
   const [settings, setSettings] = useState<ArpeggioSettings>({
-    trackId: 'dn-puncture', pitchClasses: seedPitchClasses, lowOctave: 3, highOctave: 5, direction: 'up-down', repeat: 1, triggers: 'keep'
+    trackId: 'dn-puncture', pitchClasses: arpeggioScaleNotes(rootSync.root, 'minor'), lowOctave: 3, highOctave: 5, direction: 'up-down', repeat: 1, triggers: 'keep'
   })
-  useEffect(() => setSettings((current) => ({ ...current, pitchClasses: seedPitchClasses })), [seedPitchClasses])
+  useEffect(() => {
+    setRoot(rootSync.root)
+    setSettings((current) => ({ ...current, pitchClasses: arpeggioScaleNotes(rootSync.root, scale) }))
+  }, [rootSync.revision])
+
+  const chooseRoot = (nextRoot: number): void => {
+    setRoot(nextRoot)
+    setSettings((current) => ({ ...current, pitchClasses: arpeggioScaleNotes(nextRoot, scale) }))
+  }
+  const chooseScale = (nextScale: ArpeggioScale): void => {
+    setScale(nextScale)
+    setSettings((current) => ({ ...current, pitchClasses: arpeggioScaleNotes(root, nextScale) }))
+  }
 
   const togglePitch = (pitchClass: number): void => setSettings((current) => ({
     ...current,
@@ -576,8 +611,13 @@ function ArpeggioGenerator({ digitoneTracks, seedPitchClasses, onGenerate }: { d
 
   return <RackFrame className="arpeggio-module">
     <div className="unit-heading"><div><h1>ARPEGGIO GENERATOR</h1></div></div>
+    <div className="generator-widget-row"><div className="generator-widget arpeggio-widget"><span className="generator-widget-label">PITCH SET</span><MiniKeyboard selected={settings.pitchClasses} onToggle={togglePitch} /></div><div className="widget-side-controls arpeggio-widget-controls">
+      <label>ROOT<select aria-label="Arpeggio root" value={root} onChange={(event) => chooseRoot(Number(event.target.value))}>{rootLabels.map((label, index) => <option value={index} key={label}>{label}</option>)}</select></label>
+      <label>SCALE<select aria-label="Arpeggio scale" value={scale} onChange={(event) => chooseScale(event.target.value as ArpeggioScale)}>
+        <option value="minor">MINOR</option><option value="dorian">DORIAN</option><option value="phrygian">PHRYGIAN</option><option value="major">MAJOR</option><option value="mixolydian">MIXOLYDIAN</option><option value="chromatic">CHROMATIC</option>
+      </select></label>
+    </div></div>
     <div className="arpeggio-controls">
-      <div className="arp-field"><span>NOTES</span><MiniKeyboard selected={settings.pitchClasses} onToggle={togglePitch} /></div>
       <div className="arp-field"><span>OCTAVE RANGE</span><div className="arp-range">
         <select aria-label="Arpeggio lowest octave" value={settings.lowOctave} onChange={(event) => setLowOctave(Number(event.target.value))}>{[1, 2, 3, 4, 5, 6].map((octave) => <option value={octave} key={octave}>{octave}</option>)}</select>
         <b>–</b>
@@ -592,18 +632,25 @@ function ArpeggioGenerator({ digitoneTracks, seedPitchClasses, onGenerate }: { d
       <label>TRIGGERS<select aria-label="Arpeggio trigger placement" value={settings.triggers} onChange={(event) => setSettings((current) => ({ ...current, triggers: event.target.value as ArpeggioTriggers }))}>
         <option value="keep">KEEP LANE</option><option value="every-2">EVERY 2</option><option value="every-1">EVERY STEP</option>
       </select></label>
-      <div className="arpeggio-apply-group">
-        <label>APPLY TO<select aria-label="Arpeggio target lane" value={settings.trackId} onChange={(event) => setSettings((current) => ({ ...current, trackId: event.target.value as DigitoneTrackId }))}>
-          {digitoneTracks.map((track) => <option value={track.id} key={track.id}>{track.label}</option>)}
-        </select></label>
-        <button className="arpeggio-action" disabled={settings.pitchClasses.length === 0} onClick={() => onGenerate(settings)}>APPLY</button>
-      </div>
+      <GeneratorApplyControls label="Arpeggio" target={settings.trackId} digitoneTracks={digitoneTracks} digitaktTracks={digitaktTracks} onTarget={(trackId) => setSettings((current) => ({ ...current, trackId }))} onApply={() => onGenerate(settings)} disabled={settings.pitchClasses.length === 0} />
     </div>
   </RackFrame>
 }
 
 const whiteKeys = [0, 2, 4, 5, 7, 9, 11]
 const blackKeys = [{ pitchClass: 1, left: '10.5%' }, { pitchClass: 3, left: '24.8%' }, { pitchClass: 6, left: '53.4%' }, { pitchClass: 8, left: '67.7%' }, { pitchClass: 10, left: '82%' }]
+const arpeggioScaleIntervals: Record<ArpeggioScale, number[]> = {
+  minor: [0, 2, 3, 5, 7, 8, 10],
+  dorian: [0, 2, 3, 5, 7, 9, 10],
+  phrygian: [0, 1, 3, 5, 7, 8, 10],
+  major: [0, 2, 4, 5, 7, 9, 11],
+  mixolydian: [0, 2, 4, 5, 7, 9, 10],
+  chromatic: Array.from({ length: 12 }, (_, index) => index)
+}
+
+function arpeggioScaleNotes(root: number, scale: ArpeggioScale): number[] {
+  return arpeggioScaleIntervals[scale].map((interval) => (root + interval) % 12).sort((left, right) => left - right)
+}
 
 function MiniKeyboard({ selected, onToggle }: { selected: number[]; onToggle: (pitchClass: number) => void }): React.JSX.Element {
   return <div className="mini-keyboard" role="group" aria-label="Arpeggio notes">
@@ -612,10 +659,23 @@ function MiniKeyboard({ selected, onToggle }: { selected: number[]; onToggle: (p
   </div>
 }
 
+function GeneratorApplyControls({ label, target, digitoneTracks, digitaktTracks, onTarget, onApply, busy = false, disabled = false }: { label: string; target: GeneratorTarget; digitoneTracks: Array<{ id: DigitoneTrackId; label: string }>; digitaktTracks: Array<{ id: DigitaktTrackId; label: string }>; onTarget: (target: GeneratorTarget) => void; onApply: () => void; busy?: boolean; disabled?: boolean }): React.JSX.Element {
+  return <div className="generator-apply-group">
+    <label>APPLY TO<select aria-label={`${label} target lane`} value={target} onChange={(event) => onTarget(event.target.value as GeneratorTarget)}>
+      <option value="all">ALL</option>
+      <option value="all-digitone">ALL DIGITONE</option>
+      <option value="all-digitakt">ALL DIGITAKT</option>
+      <optgroup label="DIGITONE">{digitoneTracks.map((track) => <option value={track.id} key={track.id}>{track.label}</option>)}</optgroup>
+      <optgroup label="DIGITAKT">{digitaktTracks.map((track) => <option value={track.id} key={track.id}>{track.label}</option>)}</optgroup>
+    </select></label>
+    <button className={`generator-apply-action ${busy ? 'working' : ''}`} disabled={disabled} aria-busy={busy} aria-label={`APPLY ${label.toUpperCase()}`} onClick={onApply}><strong>{busy ? 'APPLYING…' : 'APPLY'}</strong></button>
+  </div>
+}
+
 function LfoRack({ lfos, levels, onChange }: { lfos: LfoConfig[]; levels: Record<LfoId, number>; onChange: (id: LfoId, change: (lfo: LfoConfig) => LfoConfig) => void }): React.JSX.Element {
   return <RackFrame className="lfo-module">
     <div className="unit-heading">
-      <div><h1>MODULATION GENERATOR</h1></div>
+      <div><h1>MODULATION SOURCE</h1></div>
     </div>
     <div className="lfo-grid">
       {lfos.map((lfo, index) => <section className="lfo-card" key={lfo.id}>
@@ -690,15 +750,30 @@ function RackFrame({ children, className }: { children: React.ReactNode; classNa
 }
 
 function ModuleSetup({ target, outputs, selected, tracks, onSelect, onChannel }: { target: RackTarget; outputs: string[]; selected: number | null; tracks: Array<{ id: TrackId; label: string; channel: number }>; onSelect: (target: RackTarget, port: number | null) => Promise<void>; onChannel: (trackId: TrackId, channel: number) => void }): React.JSX.Element {
-  const [expanded, setExpanded] = useState(selected === null)
-  useEffect(() => setExpanded(selected === null), [selected])
-  return <details className={`module-setup ${selected === null ? 'unconfigured' : 'configured'}`} open={expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}>
-    <summary aria-label={`${target} MIDI setup`}><strong>{target.toUpperCase()} · MIDI</strong><small>{selected === null ? 'SETUP' : 'SET'}</small></summary>
-    <div className="module-setup-panel">
-      <label className="module-output">MIDI OUT<select value={selected ?? ''} onChange={(event) => void onSelect(target, event.target.value === '' ? null : Number(event.target.value))}><option value="">Select {target === 'digitone' ? 'Digitone' : 'Digitakt'}…</option>{outputs.map((name, index) => <option value={index} key={`${name}-${index}`}>{name}</option>)}</select><small>{selected === null ? 'DISCONNECTED' : 'ARMED'}</small></label>
-      <div className="channel-bank" aria-label={`${target} MIDI channels`}>{tracks.map((track) => <label key={track.id} title={track.label}><span>{track.label.replace(/^T(\d+) \/.*/, 'T$1')}</span><select aria-label={`${track.label} MIDI channel`} value={track.channel} onChange={(event) => onChannel(track.id, Number(event.target.value))}>{channelOptions()}</select></label>)}</div>
-    </div>
-  </details>
+  const [expanded, setExpanded] = useState(false)
+  return <div className="module-setup">
+    <button className="module-setup-trigger" aria-label={`${target} MIDI setup`} aria-expanded={expanded} onClick={() => setExpanded(true)}><strong>{target.toUpperCase()} · MIDI</strong><small>SETUP</small></button>
+    {expanded && <div className="module-setup-modal" role="dialog" aria-modal="true" aria-label={`${target} MIDI setup`}>
+      <div className="module-setup-panel">
+        <div className="module-setup-title"><span>{target.toUpperCase()} ROUTING</span><button aria-label={`Close ${target} MIDI setup`} onClick={() => setExpanded(false)}>×</button></div>
+        <ConnectionFields target={target} outputs={outputs} selected={selected} tracks={tracks} onSelect={onSelect} onChannel={onChannel} />
+      </div>
+    </div>}
+  </div>
+}
+
+function ModuleConnectionSetup({ target, outputs, selected, tracks, onSelect, onChannel }: { target: RackTarget; outputs: string[]; selected: number | null; tracks: Array<{ id: TrackId; label: string; channel: number }>; onSelect: (target: RackTarget, port: number | null) => Promise<void>; onChannel: (trackId: TrackId, channel: number) => void }): React.JSX.Element {
+  return <section className="module-connection" aria-label={`${target} connection setup`}>
+    <h2>SELECT A MIDI OUTPUT</h2>
+    <ConnectionFields target={target} outputs={outputs} selected={selected} tracks={tracks} onSelect={onSelect} onChannel={onChannel} />
+  </section>
+}
+
+function ConnectionFields({ target, outputs, selected, tracks, onSelect, onChannel }: { target: RackTarget; outputs: string[]; selected: number | null; tracks: Array<{ id: TrackId; label: string; channel: number }>; onSelect: (target: RackTarget, port: number | null) => Promise<void>; onChannel: (trackId: TrackId, channel: number) => void }): React.JSX.Element {
+  return <div className="module-routing-fields">
+    <label className="module-output">MIDI OUT<select value={selected ?? ''} onChange={(event) => void onSelect(target, event.target.value === '' ? null : Number(event.target.value))}><option value="">Select {target === 'digitone' ? 'Digitone' : 'Digitakt'}…</option>{outputs.map((name, index) => <option value={index} key={`${name}-${index}`}>{name}</option>)}</select><small>{selected === null ? 'DISCONNECTED' : 'ARMED'}</small></label>
+    <div className="channel-bank" aria-label={`${target} MIDI channels`}>{tracks.map((track) => <label key={track.id} title={track.label}><span>{track.label.replace(/^T(\d+) \/.*/, 'T$1')}</span><select aria-label={`${track.label} MIDI channel`} value={track.channel} onChange={(event) => onChannel(track.id, Number(event.target.value))}>{channelOptions()}</select></label>)}</div>
+  </div>
 }
 
 function SequenceToolbar({ label, view, page, onView, onPage }: { label: string; view: SequenceView; page: number; onView: (view: SequenceView) => void; onPage: (page: number) => void }): React.JSX.Element {
@@ -713,18 +788,28 @@ function SequenceToolbar({ label, view, page, onView, onPage }: { label: string;
   </section>
 }
 
-function SceneGenerator({ selected, onSelect }: { selected: UnifiedSceneId; onSelect: (scene: UnifiedSceneId) => void }): React.JSX.Element {
+function SceneMixer({ selected, enabled, autoAdvance, bars, onSelect, onEnabled, onAutoAdvance, onBars }: { selected: UnifiedSceneId; enabled: Record<SceneSequenceId, boolean>; autoAdvance: boolean; bars: SceneBarLength; onSelect: (scene: UnifiedSceneId) => void; onEnabled: (scene: SceneSequenceId) => void; onAutoAdvance: (enabled: boolean) => void; onBars: (bars: SceneBarLength) => void }): React.JSX.Element {
+  const impact = sceneImpact(selected)
   return <RackFrame className="scene-module">
-    <div className="scene-generator-layout">
-      <div className="scene-generator-title"><h1>SCENE GENERATOR</h1></div>
-      <section className="scene-strip" aria-label="Scenes for Digitone and Digitakt">
-        {(Object.keys(unifiedSceneInfo) as UnifiedSceneId[]).map((id) => <SceneButton key={id} label={unifiedSceneInfo[id].label} selected={selected === id} onSelect={() => onSelect(id)} />)}
-      </section>
+    <div className="unit-heading scene-heading">
+      <h1>SCENE MIXER</h1>
+    </div>
+    <div className="generator-widget-row"><div className="generator-widget scene-widget"><span className="generator-widget-label">SCENE MIX · {unifiedSceneInfo[selected].label}</span><section className="scene-impact" aria-label={`${unifiedSceneInfo[selected].label} scene impact`}>
+      {impact.map((group) => <div className="scene-impact-group" key={group.label}><strong>{group.label}</strong>{group.parts.map((part) => <div className="scene-impact-row" key={part.label}><span>{part.label}</span><i aria-label={`${part.label} ${Math.round(part.level * 100)} percent`}><b style={{ height: `${part.level * 100}%` }} /></i><output>{Math.round(part.level * 100)}%</output></div>)}</div>)}
+    </section></div><div className="widget-side-controls scene-auto-controls">
+        <label className="scene-auto-toggle"><span>AUTO PLAY</span><button className={autoAdvance ? 'engaged' : ''} aria-label={`AUTO ${autoAdvance ? 'ON' : 'OFF'}`} aria-pressed={autoAdvance} onClick={() => onAutoAdvance(!autoAdvance)}>{autoAdvance ? 'ON' : 'OFF'}</button></label>
+        <label><span>SCENE LENGTH</span><select aria-label="Scene advance length" value={bars} onChange={(event) => onBars(Number(event.target.value) as SceneBarLength)}>{([4, 8, 16, 32, 64] as SceneBarLength[]).map((value) => <option value={value} key={value}>{value} BARS</option>)}</select></label>
+      </div></div>
+    <div className="scene-mixer-layout">
+      <div className="scene-full-control"><span>MANUAL OVERRIDE</span><SceneTrigger label="FULL" selected={selected === 'full'} onSelect={() => onSelect('full')} /></div>
+      <div className="scene-sequence"><div className="scene-section-label"><span>AUTO LOOP ORDER</span><small>LEFT → RIGHT</small></div><section className="scene-strip" aria-label="Club arrangement scenes">
+        {sceneSequence.map((id) => <div className={`scene-slot ${enabled[id] ? 'enabled' : 'disabled'}`} key={id}><SceneTrigger label={unifiedSceneInfo[id].label} selected={selected === id} onSelect={() => onSelect(id)} /><button className="scene-enabled" title={enabled[id] ? 'Included in auto loop' : 'Skipped by auto loop'} aria-label={enabled[id] ? `Remove ${unifiedSceneInfo[id].label} from auto loop` : `Add ${unifiedSceneInfo[id].label} to auto loop`} aria-pressed={enabled[id]} onClick={() => onEnabled(id)}>{enabled[id] ? 'IN' : 'OUT'}</button></div>)}
+      </section></div>
     </div>
   </RackFrame>
 }
 
-function SceneButton({ label, selected, onSelect }: { label: string; selected: boolean; onSelect: () => void }): React.JSX.Element {
+function SceneTrigger({ label, selected, onSelect }: { label: string; selected: boolean; onSelect: () => void }): React.JSX.Element {
   return <button className={`scene-card ${selected ? 'selected' : ''}`} aria-label={label} aria-pressed={selected} onClick={onSelect}>
     <strong>{label}</strong>
   </button>
@@ -859,7 +944,7 @@ function DrumStepEditor({ track, index, step, onChange, onClose }: { track: Digi
 }
 
 function SeedSelect({ label, value, onChange, children }: { label: string; value: string | number; onChange: (value: string) => void; children: React.ReactNode }): React.JSX.Element {
-  return <label className="seed-select"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{children}</select></label>
+  return <label className="seed-select"><span>{label}</span><select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>{children}</select></label>
 }
 
 function ValueControl({ label, value, min, max, suffix = '', onChange }: { label: string; value: number; min: number; max: number; suffix?: string; onChange: (value: number) => void }): React.JSX.Element {
@@ -895,6 +980,9 @@ function shapeGlyph(shape: LfoShape): string { return ({ sine: '∿', triangle: 
 function noteName(note: number): string { return ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'][note % 12] + (Math.floor(note / 12) - 1) }
 function formatNotes(notes: number[]): string { return notes.map(noteName).join(' ') }
 function clampNote(note: number): number { return Math.max(0, Math.min(127, note)) }
+function targetIncludes(target: GeneratorTarget, trackId: TrackId): boolean {
+  return target === 'all' || target === trackId || (target === 'all-digitone' && trackId.startsWith('dn-')) || (target === 'all-digitakt' && trackId.startsWith('dk-'))
+}
 function entries<Value>(record: Record<string, Value>): Array<[string, Value]> { return Object.entries(record) }
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error) }
 

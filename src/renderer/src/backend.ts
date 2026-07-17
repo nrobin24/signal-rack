@@ -63,6 +63,7 @@ export const backend = {
   generateSeed: (settings: SeedSettings, variation: number): Promise<GeneratedSeed> => call('generate_seed', { settings, variation }),
   exportLabSession,
   onStep: (callback: (steps: Partial<Record<TrackId, number>>) => void): Promise<UnlistenFn> => subscribe('sequencer-step', callback),
+  onClockStep: (callback: (globalStep: number) => void): Promise<UnlistenFn> => subscribe('sequencer-clock-step', callback),
   onLfoLevels: (callback: (levels: Record<LfoId, number>) => void): Promise<UnlistenFn> => subscribe('lfo-levels', callback),
   onStopped: (callback: () => void): Promise<UnlistenFn> => subscribe('sequencer-stopped', callback)
 }

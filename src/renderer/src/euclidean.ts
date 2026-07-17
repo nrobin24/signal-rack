@@ -1,7 +1,7 @@
-import type { Step, TrackId } from '../../shared/types'
+import type { GeneratorTarget, Step } from '../../shared/types'
 
 export type EuclideanSettings = {
-  trackId: TrackId
+  trackId: GeneratorTarget
   hits: number
   steps: number
   rotation: number

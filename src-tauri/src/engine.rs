@@ -668,6 +668,7 @@ impl Engine {
         }
         // UI telemetry is deliberately last: clock and musical event scheduling have priority.
         let _ = app.emit("sequencer-step", positions);
+        let _ = app.emit("sequencer-clock-step", global_step);
         let _ = app.emit("lfo-levels", lfo_levels);
     }
 
