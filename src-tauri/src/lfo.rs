@@ -10,6 +10,8 @@ fn period_pulses(period: LfoPeriod) -> u64 {
         LfoPeriod::Bars8 => 768,
         LfoPeriod::Bars16 => 1536,
         LfoPeriod::Bars32 => 3072,
+        LfoPeriod::Bars64 => 6144,
+        LfoPeriod::Bars128 => 12288,
     }
 }
 
@@ -29,7 +31,31 @@ pub fn lfo_value(lfo: &LfoConfig, pulse: u64) -> f64 {
         LfoShape::RampUp => phase * 2.0 - 1.0,
         LfoShape::RampDown => 1.0 - phase * 2.0,
         LfoShape::Random => random_cycle_value(lfo.id, pulse / pulses),
+        LfoShape::Drawn => drawn_value(&lfo.points, phase),
     }
+}
+
+fn drawn_value(points: &[crate::model::LfoPoint], phase: f64) -> f64 {
+    let Some(first) = points.first() else {
+        return 0.0;
+    };
+    if phase <= first.x {
+        return first.y.clamp(-1.0, 1.0);
+    }
+
+    let mut previous = first;
+    for point in &points[1..] {
+        if phase <= point.x {
+            let width = point.x - previous.x;
+            if width <= f64::EPSILON {
+                return point.y.clamp(-1.0, 1.0);
+            }
+            let amount = (phase - previous.x) / width;
+            return (previous.y + (point.y - previous.y) * amount).clamp(-1.0, 1.0);
+        }
+        previous = point;
+    }
+    previous.y.clamp(-1.0, 1.0)
 }
 
 pub fn modulated_value(base: f64, lfo: Option<&LfoConfig>, depth: f64, pulse: u64) -> f64 {
@@ -43,6 +69,10 @@ fn random_cycle_value(id: LfoId, cycle: u64) -> f64 {
         LfoId::Lfo2 => "lfo-2",
         LfoId::Lfo3 => "lfo-3",
         LfoId::Lfo4 => "lfo-4",
+        LfoId::Lfo5 => "lfo-5",
+        LfoId::Lfo6 => "lfo-6",
+        LfoId::Lfo7 => "lfo-7",
+        LfoId::Lfo8 => "lfo-8",
     };
     let mut value = 2_166_136_261_u32;
     for byte in format!("{id}-{cycle}").bytes() {
@@ -63,6 +93,7 @@ mod tests {
             id: LfoId::Lfo1,
             shape: LfoShape::Sine,
             period: LfoPeriod::Quarter,
+            points: Vec::new(),
         }
     }
 
@@ -77,11 +108,24 @@ mod tests {
     }
 
     #[test]
+    fn supports_slow_64_and_128_bar_cycles() {
+        let mut lfo = sine();
+        lfo.period = LfoPeriod::Bars64;
+        assert!((lfo_value(&lfo, 1536) - 1.0).abs() < 1e-9);
+        assert!(lfo_value(&lfo, 6144).abs() < 1e-9);
+
+        lfo.period = LfoPeriod::Bars128;
+        assert!((lfo_value(&lfo, 3072) - 1.0).abs() < 1e-9);
+        assert!(lfo_value(&lfo, 12288).abs() < 1e-9);
+    }
+
+    #[test]
     fn random_holds_for_a_complete_period() {
         let lfo = LfoConfig {
             id: LfoId::Lfo4,
             shape: LfoShape::Random,
             period: LfoPeriod::Bar1,
+            points: Vec::new(),
         };
         assert_eq!(lfo_value(&lfo, 0), lfo_value(&lfo, 95));
         assert_ne!(lfo_value(&lfo, 95), lfo_value(&lfo, 96));
@@ -97,5 +141,24 @@ mod tests {
         assert_eq!(modulated_value(110.0, Some(&lfo), 40.0, 0), 127.0);
         assert_eq!(modulated_value(10.0, Some(&lfo), 40.0, 12), 0.0);
         assert_eq!(modulated_value(73.0, None, 40.0, 0), 73.0);
+    }
+
+    #[test]
+    fn drawn_shape_interpolates_between_points_and_restarts() {
+        let lfo = LfoConfig {
+            id: LfoId::Lfo1,
+            shape: LfoShape::Drawn,
+            period: LfoPeriod::Quarter,
+            points: vec![
+                crate::model::LfoPoint { x: 0.0, y: -1.0 },
+                crate::model::LfoPoint { x: 0.5, y: 1.0 },
+                crate::model::LfoPoint { x: 1.0, y: -1.0 },
+            ],
+        };
+        assert_eq!(lfo_value(&lfo, 0), -1.0);
+        assert_eq!(lfo_value(&lfo, 6), 0.0);
+        assert_eq!(lfo_value(&lfo, 12), 1.0);
+        assert_eq!(lfo_value(&lfo, 18), 0.0);
+        assert_eq!(lfo_value(&lfo, 24), -1.0);
     }
 }

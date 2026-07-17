@@ -1,25 +1,32 @@
 <p align="center">
-  <img src="docs/images/signal-rack-hero.png" alt="Signal Rack generative MIDI sequencer mounted as a physical studio rack instrument" width="100%" />
+  <img src="docs/images/signal-rack-hero.png" alt="Signal Rack generative MIDI sequencer for Elektron Digitone and Digitakt" width="100%" />
 </p>
 
 # Signal Rack
 
-Signal Rack is a Tauri desktop MIDI environment built from device-specific instrument modules and a shared musical direction layer. React renders the rack; Rust owns generation, clocking, modulation, scheduling, and CoreMIDI output.
+Signal Rack is a desktop MIDI sketching environment for Elektron Digitone and Digitakt. A small set of musical choices produces a coordinated four-bar idea across both instruments, which can then be reshaped, edited, and performed without turning the application into a DAW.
 
-The rack currently contains four top-level modules:
+React renders the rack interface. Rust owns phrase generation, MIDI clocking, modulation, event scheduling, and native MIDI output through Tauri.
 
-- **Sequence Generator** turns a small set of plain-language choices into related material for the whole rack.
-- **Global LFOs** provides four transport-synced modulation sources that can be routed into supported parameters.
-- **Digitone** provides bass, chord/vamp, and puncture lanes with editable notes, timing, probability, scenes, and sound macros.
-- **Digitakt** provides seven rhythm voices—kick, snare, closed hat, open hat, rimshot, clap, and texture—with editable trigs, timing feel, channels, and mutes.
+## What is in the rack
+
+- **Phrase Generator** creates related bass, harmony, puncture, and drum material from root, harmony, style, energy, four-bar shape, phrase leader, and cycle choices.
+- **Modulation Generator** provides eight clock-synced LFOs. Standard waveforms, sample-and-hold, and editable drawn curves can be routed to supported parameters from a quarter note through 128 bars.
+- **Euclidean Generator** applies one of twelve useful Euclidean rhythms—or a custom hit, step, and rotation combination—to a single Digitone or Digitakt lane.
+- **Arpeggio Generator** applies phrase-aware pitch classes to one Digitone lane, with octave range, direction, repetition, and trigger-placement controls.
+- **Scene Generator** provides eight coordinated density states for both instruments: Full, Core, Bass, Space, Tops, Drums, Melody, and Drop.
+- **Digitone** has bass, chord/vamp, and puncture lanes with editable notes, groove, probability, octave, cutoff, delay, and LFO routing.
+- **Digitakt** has kick, snare, closed-hat, open-hat, rimshot, clap, and texture lanes with editable trigs, groove, probability, cutoff, delay, and LFO routing.
+
+Every lane can hold 64 steps. **Edit 1 Bar** provides detailed 16-step editing, while **View 4 Bars** shows the complete phrase and lets any step be opened directly.
 
 ## Download
 
-Prebuilt installers are available from [GitHub Releases](https://github.com/nrobin24/signal-rack/releases). Choose the Windows setup executable or Apple Silicon DMG for the destination computer.
+Installers are available from [GitHub Releases](https://github.com/nrobin24/signal-rack/releases). Choose the Windows x64 installer or Apple Silicon DMG.
 
-These early builds are unsigned, so Windows SmartScreen or macOS Gatekeeper may ask for confirmation before opening them. Signal Rack has been developed and hardware-tested on macOS; Windows builds use the same cross-platform MIDI backend but should still be considered early testing releases.
+These early builds are unsigned, so Windows SmartScreen or macOS Gatekeeper may ask for confirmation. The macOS build has received the most hardware testing; Windows support should still be considered early.
 
-## Run it
+## Run from source
 
 ```bash
 npm install
@@ -27,90 +34,98 @@ npm run test:e2e:install
 npm run dev
 ```
 
-The first run compiles the Rust backend and opens the native Tauri window. Development requires Node.js and the stable Rust toolchain, plus the platform prerequisites documented by Tauri. macOS development also requires the Xcode command-line tools.
+Development requires Node.js, the stable Rust toolchain, Tauri's platform prerequisites, and the Xcode command-line tools on macOS.
 
-Useful development commands:
+Useful commands:
 
 ```bash
-npm run dev          # Vite + native Tauri development window
-npm run check        # TypeScript, Rust, and frontend production checks
-npm test             # Rust unit tests + browser E2E command-boundary test
-npm run test:e2e:install # One-time Chromium install for the E2E suite
-npm run midi:ports   # Native CoreMIDI output scan
-npm run clock:bench -- 132 6 # Measure the native clock scheduler at 132 BPM for 6 seconds
-npm run build        # Production macOS .app bundle
+npm run dev                       # Vite + native Tauri window
+npm run check                     # TypeScript, Rust, and frontend build
+npm test                          # Rust unit tests + browser E2E tests
+npm run test:e2e                  # React UI against a mocked Tauri boundary
+npm run midi:ports                # Scan native MIDI outputs
+npm run clock:bench -- 132 6      # Measure clock timing at 132 BPM for 6 seconds
+npm run build                     # Build the desktop application
 ```
 
-Pushing a version tag such as `v0.4.0` runs the release workflow for Windows x64 and Apple Silicon macOS. The resulting installers are collected in a draft GitHub Release for final inspection before publishing.
+Pushing a version tag such as `v0.4.0` builds Windows x64 and Apple Silicon installers in a draft GitHub Release.
 
-The Playwright E2E suite runs the real React interface against a mock of the Tauri command boundary, so it never sends notes to connected hardware. Rust unit tests cover generation, groove timing, LFO waveforms, clock periods, and value clamping. Use `npm run midi:ports` and the native development window for hardware validation; the browser preview alone does not exercise CoreMIDI. Production builds are written to `src-tauri/target/release/bundle/macos/Signal Rack.app`.
+## Hardware setup
 
-The transport and tempo are global. Each instrument module has its own MIDI output selector, so Digitone and Digitakt can be connected directly over separate USB MIDI ports. Either instrument can run by itself.
+The transport and tempo are global. Digitone and Digitakt each have a MIDI-output and channel panel, and either instrument can operate by itself. Once a device has been selected, its setup panel collapses to keep the rack compact.
 
-## Architecture
+### Digitone
 
-The frontend sends typed Tauri commands for output discovery and selection, rack configuration, transport, macro changes, and Sequence Generator requests. Rust keeps the authoritative sequencer state and emits step/stopped events back to the interface.
+1. Connect Digitone over USB MIDI and select it in the Digitone setup panel.
+2. Match synth tracks 1–3 to the configured channels; defaults are channels 1, 2, and 3.
+3. Enable note reception and `MIDI CONFIG > PORT CONFIG > RECEIVE CC/NRPN`.
+
+Signal Rack addresses cutoff and delay using Elektron's documented MIDI parameters. Digitone octave, cutoff, and delay can each remain manual or use one of the eight modulation sources with an independent depth.
+
+Cell editors accept MIDI numbers (`38 41 45`) or scientific note names (`D2 F2 A2`). An empty note field creates a rest.
+
+### Digitakt
+
+1. Load Sounds on tracks 1–7 in this order: kick, snare, closed hat, open hat, rimshot, clap, and texture.
+2. Select Digitakt and match those tracks to channels 1–7.
+3. Enable note reception.
+
+Signal Rack sends MIDI note 60 to each track channel, playing the Sound already loaded on that track. It does not transfer samples or replace the Digitakt project.
+
+In Detail view, the main pad surface toggles a trig and the smaller **Edit** control opens velocity, gate, and probability without changing the trig state.
+
+## Musical workflow
+
+Choose a phrase direction and press **Generate**. The phrase engine writes a related 64-step proposition across all ten lanes:
+
+- Digitone receives bass motifs, extended chord movement, upper-register punctures, groove, probability, and starting parameter values.
+- Digitakt receives related kick, backbeat, hat, percussion, and texture parts across the same four-bar form.
+
+The available phrase shapes are A–A′–B–turn, question/answer, event/consequence/space/return, and call/pressure/break/challenge. The phrase leader determines which musical family carries the development while the other roles support it.
+
+The **Cycle** choice controls loop relationships. **Locked** keeps all lanes on 64 steps, **Auto** gives one supporting Digitone voice a shorter cycle, and **Poly** uses two independent Digitone cycles while retaining a four-bar phrase leader.
+
+After generation, use the lane generators for targeted changes, Scene Generator for coordinated density changes, and lane or instrument mutes for manual performance.
+
+## Generator Lab
+
+Generator Lab is a focused hardware-listening mode for improving the generator with structured human feedback.
+
+1. Define one goal and hypothesis.
+2. Freeze a blind batch of 6–12 candidates.
+3. Audition each candidate for one cycle, two cycles, or continuously.
+4. Record Keep, Maybe, or Reject.
+5. Optionally rate Pitch, Groove, Step Placement, and Development for the full rack or individual musical roles.
+6. Export the session as JSON for analysis.
+
+Candidate settings remain concealed until a verdict is recorded. Bad ratings can include one standardized cause, while freeform notes remain available for anything the scorecard does not capture.
+
+**Export Session** opens a native Save As dialog, defaulting to Documents and remembering the most recent folder within the batch. Signal Rack warns before ending, leaving, reloading, or closing with unexported session changes.
+
+## Architecture and testing
+
+The frontend sends typed Tauri commands for output discovery, routing, rack configuration, transport, macro changes, phrase generation, and Generator Lab export. Rust keeps the authoritative sequencer state and emits step, modulation-level, and stopped events to the interface.
 
 The native engine provides:
 
-- A drift-free, absolute-deadline 24-PPQN MIDI clock with precision sleeping and synchronized transport messages.
-- Tempo-relative per-lane groove offsets, probability, velocity, gate scheduling, mutes, and note releases.
-- Shared-port or separate-port Digitone/Digitakt routing through CoreMIDI.
-- Digitone Tone/Space NRPN macros and clocked Global LFO modulation.
+- Absolute-deadline 24-PPQN MIDI clocking with synchronized transport messages.
+- Per-lane groove offsets, probability, velocity, gate scheduling, mutes, and note releases.
+- Shared-port or separate-port Digitone and Digitakt routing.
+- Cutoff, delay, and Digitone octave modulation.
 - Deterministic harmony, motif, and rhythm generation for all ten lanes.
 
-The command boundary lives in `src/renderer/src/backend.ts`; Rust modules live in `src-tauri/src`. Electron, its preload bridge, the Node MIDI dependency, and the TypeScript generator/LFO engines are no longer part of the application.
-
-The four lane grooves preserve the same musical displacement as tempo changes: **Straight** stays on the grid, **Early** moves selected offbeats forward, **Late** places selected offbeats behind the grid, and **Push/Pull** alternates late/early/late over each four-step group. MIDI clock messages always take priority over scheduled note, UI, and modulation work.
-
-Every instrument lane stores up to 64 steps. **EDIT 1 BAR** shows one editable 16-step bar at a time, with clearly grouped four-step beats. **VIEW 4 BARS** shows four labeled 16-step maps at once; selecting any cell sends it to the full editor and prepares its bar for editing.
-
-## Sequence Generator
-
-Choose a root, harmony color, bass role, style, energy level, four-bar shape, and phrase leader, then press **GENERATE**. The v2 engine writes a coordinated 64-step phrase directly into all ten lanes:
-
-- Digitone receives four-bar bass motifs, parameter-aware extended-chord movement, upper-register punctures, timing feel, chance, and starting `TONE`/`SPACE` values.
-- Digitakt receives related kick, snare, closed-hat, open-hat, rimshot, clap, and texture parts across the same four-bar form.
-
-The phrase shapes cover **A–A′–B–turn**, **two-bar question/answer**, **event/consequence/space/return**, and **call/pressure/break/challenge**. One selected family—drums, bass, harmony, or texture—leads the development while a complementary family supplies the final turn. Stable anchors recur across bars, bar three carries the main development or absence, and bar four returns with a controlled pickup instead of making every lane fill simultaneously.
-
-Styles include broken pocket, house, footwork, dub, jungle, UK bass, Brazilian interlock, and electro. Repeated presses preserve the chosen identity while creating small deterministic mutations. The planned “grow three sketches, audition, then commit” workflow remains deferred so this version stays immediate.
-
-Vamp movement deliberately scales with the musical controls. Low-energy Dorian can remain a one-chord modal pocket; House and Open colors expand into three- or four-harmony motion; Jazz-Funk uses four extended voicings. Higher energy and **HARMONY** leadership introduce more movement, inversions, and late approach chords, while the selected phrase shape determines the four-bar progression. A short polymetric vamp carries a compact local chord cycle rather than repeating a single voicing.
-
-The **CYCLE** control separates the shared four-bar composition from individual lane loop lengths. **AUTO** keeps the Digitakt parts and phrase-leading Digitone voice on the 64-step frame while giving one complementary Digitone voice a style-appropriate 10-, 12-, or 14-step cycle. **POLY** uses two independent Digitone cycles while retaining a 64-step phrase leader. **LOCKED** keeps every generated lane at 64 steps. Short cycles contain purpose-built local material rather than simply truncating the four-bar phrase.
-
-## Global LFOs
-
-Each of the four LFOs has a selectable shape, clock-synced time, and a live bipolar level meter. Shapes include sine, triangle, square, rising and falling ramps, and sample-and-hold. Times range from a quarter note through 32 bars and restart with the transport.
-
-Supported instrument parameters have a modulation-source selector beside their manual control. Choose `LFO 1`–`LFO 4`, or `MANUAL` to disconnect modulation. The manual value remains an editable baseline; every routed parameter gets its own signed depth, current value readout, and motion indicator. Values update once per sequencer step and are clamped to the MIDI range.
-
-## Digitone setup
-
-Select the Digitone output and configure synth tracks 1–3 in the compact routing panel at the top of the module. Defaults are channels 1, 2, and 3. The prominent module mute silences all three tracks while preserving their individual mute states.
-
-For `TONE` and `SPACE`, enable `MIDI CONFIG > PORT CONFIG > RECEIVE CC/NRPN`. `TONE` moves filter frequency and FM feedback; `SPACE` moves delay and reverb sends using documented Digitone NRPN messages. Either macro can be routed independently to one of the four Global LFOs.
-
-Each cell accepts MIDI numbers (`38 41 45`) or scientific note names (`D2 F2 A2`). Leave the note field blank or press **MAKE REST** for silence. Lane lengths can extend to 64 steps independently of the visible Detail page.
-
-Digitone scenes currently control only the three Digitone roles. The Scene Lens shows the exact density applied to Bass, Vamp, and Puncture; per-lane mutes remain independent overrides.
-
-## Digitakt setup
-
-Load appropriate Sounds on Digitakt audio tracks 1–7 in this order: kick, snare, closed hat, open hat, rimshot, clap, and texture. Select the Digitakt output and match channels 1–7 in the module's compact routing panel. The module mute silences the complete drum instrument without changing lane mutes.
-
-Enable `MIDI CONFIG > PORT CONFIG > RECEIVE NOTES`. Signal Rack sends MIDI note 60 to each track channel, which plays the loaded Sound at its base pitch. It sequences the Sounds already loaded on the hardware; it does not transfer samples or replace the Digitakt project.
-
-In Detail view, each drum pad has two separate actions: click the large numbered surface to place/remove the trig, or click the small **EDIT** strip to select it without changing its state. In Overview, select any compact cell and use the Trig Editor for on/off state, velocity, gate, and probability.
+The Playwright suite runs the real React interface against a mocked Tauri boundary, so browser tests never send notes to hardware. Rust tests cover generation, timing, LFO waveforms, clock periods, and value clamping. Use the native development window for actual MIDI validation.
 
 ## Current scope
 
-Signal Rack is now a playable multi-instrument sketch system. The key constraint remains: generate a specific musical proposition quickly, then perform and edit it rather than managing a large theory system.
+Signal Rack is a playable multi-instrument sketch system. Its core rule is to generate a specific musical proposition quickly, then expose a small set of useful editing and performance controls.
 
 Not included yet:
 
-- Three-sketch audition and commit flow.
-- Pattern saving, recall, or MIDI-file export.
-- MIDI input recording or Digitone/Digitakt Sound selection.
-- Full hardware parameter editors or sample management.
+- A/B parts or automatic derivation of a second section.
+- General pattern saving and recall or MIDI-file export.
+- MIDI input recording.
+- Digitone/Digitakt Sound selection or sample management.
+- Full hardware parameter editors.
+
+See [ROADMAP.md](ROADMAP.md) for the planned generator-repair loop, additional instruments, A/B arrangements, and generated parameter gestures.

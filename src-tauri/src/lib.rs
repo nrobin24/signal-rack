@@ -3,6 +3,8 @@ mod generator;
 mod lfo;
 mod model;
 
+use std::fs;
+use std::path::PathBuf;
 use tauri::{AppHandle, Manager, State, WindowEvent};
 
 use engine::{EngineState, EngineStatus};
@@ -57,9 +59,32 @@ fn generate_seed(settings: SeedSettings, variation: u32) -> GeneratedSeed {
     generator::generate_seed(&settings, variation)
 }
 
+#[tauri::command]
+fn save_lab_session(path: String, contents: String) -> Result<String, String> {
+    let path = normalized_json_path(&path)?;
+    fs::write(&path, contents)
+        .map_err(|error| format!("could not save Generator Lab session: {error}"))?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+fn normalized_json_path(path: &str) -> Result<PathBuf, String> {
+    let mut path = PathBuf::from(path);
+    if path.file_name().is_none() {
+        return Err("choose a filename for the Generator Lab session".into());
+    }
+    if !path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+    {
+        path.set_extension("json");
+    }
+    Ok(path)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(EngineState::default())
         .invoke_handler(tauri::generate_handler![
             list_outputs,
@@ -69,7 +94,8 @@ pub fn run() {
             set_macros,
             start_transport,
             stop_transport,
-            generate_seed
+            generate_seed,
+            save_lab_session
         ])
         .on_window_event(|window, event| {
             if matches!(event, WindowEvent::CloseRequested { .. }) {
@@ -79,4 +105,24 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("failed to run Signal Rack");
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::normalized_json_path;
+
+    #[test]
+    fn lab_session_exports_always_use_json_files() {
+        assert_eq!(
+            normalized_json_path("/tmp/generator-lab-2026-07-16").unwrap(),
+            PathBuf::from("/tmp/generator-lab-2026-07-16.json")
+        );
+        assert_eq!(
+            normalized_json_path("/tmp/session.JSON").unwrap(),
+            PathBuf::from("/tmp/session.JSON")
+        );
+        assert!(normalized_json_path("").is_err());
+    }
 }

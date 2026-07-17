@@ -49,6 +49,16 @@ pub enum SceneId {
     Drop,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DigitaktSceneId {
+    #[default]
+    Full,
+    Core,
+    Tops,
+    Drop,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum LfoId {
     #[serde(rename = "lfo-1")]
@@ -59,6 +69,14 @@ pub enum LfoId {
     Lfo3,
     #[serde(rename = "lfo-4")]
     Lfo4,
+    #[serde(rename = "lfo-5")]
+    Lfo5,
+    #[serde(rename = "lfo-6")]
+    Lfo6,
+    #[serde(rename = "lfo-7")]
+    Lfo7,
+    #[serde(rename = "lfo-8")]
+    Lfo8,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -75,6 +93,8 @@ pub enum LfoShape {
     RampDown,
     #[serde(rename = "random")]
     Random,
+    #[serde(rename = "drawn")]
+    Drawn,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -95,6 +115,17 @@ pub enum LfoPeriod {
     Bars16,
     #[serde(rename = "bars-32")]
     Bars32,
+    #[serde(rename = "bars-64")]
+    Bars64,
+    #[serde(rename = "bars-128")]
+    Bars128,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LfoPoint {
+    pub x: f64,
+    pub y: f64,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -103,6 +134,8 @@ pub struct LfoConfig {
     pub id: LfoId,
     pub shape: LfoShape,
     pub period: LfoPeriod,
+    #[serde(default)]
+    pub points: Vec<LfoPoint>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -125,12 +158,19 @@ pub struct TrackConfig {
     pub muted: bool,
     pub tone: Option<f64>,
     pub space: Option<f64>,
+    #[serde(default)]
+    pub tone_enabled: bool,
+    #[serde(default)]
+    pub space_enabled: bool,
     pub tone_lfo: Option<LfoId>,
     pub space_lfo: Option<LfoId>,
+    pub octave_lfo: Option<LfoId>,
     #[serde(default)]
     pub tone_lfo_depth: f64,
     #[serde(default)]
     pub space_lfo_depth: f64,
+    #[serde(default)]
+    pub octave_lfo_depth: f64,
     pub steps: Vec<Step>,
 }
 
@@ -139,6 +179,8 @@ pub struct TrackConfig {
 pub struct SequencerConfig {
     pub bpm: f64,
     pub scene: SceneId,
+    #[serde(default)]
+    pub digitakt_scene: DigitaktSceneId,
     pub lfos: Vec<LfoConfig>,
     pub tracks: Vec<TrackConfig>,
 }
@@ -148,6 +190,7 @@ impl Default for SequencerConfig {
         Self {
             bpm: 132.0,
             scene: SceneId::Full,
+            digitakt_scene: DigitaktSceneId::Full,
             lfos: Vec::new(),
             tracks: Vec::new(),
         }
