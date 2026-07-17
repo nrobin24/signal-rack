@@ -18,6 +18,7 @@ enum Role {
     Bass,
     Vamp,
     Puncture,
+    Acid,
 }
 
 struct RhythmTemplate {
@@ -31,6 +32,7 @@ struct RhythmTemplate {
     bass: &'static [usize],
     vamp: &'static [usize],
     puncture: &'static [usize],
+    acid: &'static [usize],
     bass_groove: Groove,
     vamp_groove: Groove,
     puncture_groove: Groove,
@@ -49,6 +51,7 @@ impl DigitoneLengths {
             Role::Bass => self.bass,
             Role::Vamp => self.vamp,
             Role::Puncture => self.puncture,
+            Role::Acid => PHRASE_STEPS,
             _ => PHRASE_STEPS,
         }
     }
@@ -74,6 +77,7 @@ impl RhythmTemplate {
             Role::Bass => self.bass,
             Role::Vamp => self.vamp,
             Role::Puncture => self.puncture,
+            Role::Acid => self.acid,
         }
     }
 }
@@ -124,6 +128,12 @@ pub fn generate_seed(settings: &SeedSettings, variation: u32) -> GeneratedSeed {
     let bass_positions = positions(Role::Bass, &mut random);
     let vamp_positions = positions(Role::Vamp, &mut random);
     let puncture_positions = positions(Role::Puncture, &mut random);
+    let acid_positions = four_bar_positions(
+        rhythm.positions(Role::Acid),
+        Role::Acid,
+        settings,
+        &mut random,
+    );
     let puncture_pitches: Vec<u8> = chords
         .iter()
         .flat_map(|chord| chord[chord.len().saturating_sub(2)..].iter().copied())
@@ -203,6 +213,14 @@ pub fn generate_seed(settings: &SeedSettings, variation: u32) -> GeneratedSeed {
                     68
                 },
             ),
+        },
+        GeneratedTrack {
+            id: TrackId::Td3Acid,
+            length: PHRASE_STEPS,
+            groove: rhythm.bass_groove,
+            tone: None,
+            space: None,
+            steps: acid_steps(&acid_positions, settings, &mut random, probability),
         },
         drum_track(
             TrackId::DkKick,
@@ -457,7 +475,7 @@ fn four_bar_positions(
                 bars[1] = consequence_pattern(&identity, random);
                 bars[2] = thin_pattern(&identity, 1);
                 bars[3] = return_pattern(&identity);
-            } else if matches!(role, Role::Texture | Role::Vamp | Role::Puncture) {
+            } else if matches!(role, Role::Texture | Role::Vamp | Role::Puncture | Role::Acid) {
                 bars[2] = thin_pattern(&identity, 1);
             }
             if turns {
@@ -600,7 +618,7 @@ fn is_leader(role: Role, leader: PhraseLeader) -> bool {
             Role::Kick | Role::Snare | Role::ClosedHat | Role::OpenHat
         ),
         PhraseLeader::Bass => role == Role::Bass,
-        PhraseLeader::Harmony => matches!(role, Role::Vamp | Role::Puncture),
+        PhraseLeader::Harmony => matches!(role, Role::Vamp | Role::Puncture | Role::Acid),
         PhraseLeader::Texture => matches!(role, Role::Texture | Role::Rim | Role::Clap),
     }
 }
@@ -608,7 +626,7 @@ fn is_leader(role: Role, leader: PhraseLeader) -> bool {
 fn turn_role(leader: PhraseLeader) -> Role {
     match leader {
         PhraseLeader::Pulse => Role::Puncture,
-        PhraseLeader::Bass => Role::ClosedHat,
+        PhraseLeader::Bass => Role::Acid,
         PhraseLeader::Harmony => Role::Kick,
         PhraseLeader::Texture => Role::Bass,
     }
@@ -627,6 +645,7 @@ fn rhythm_template(concept: RhythmConcept) -> RhythmTemplate {
             bass: &[0, 3, 6, 10, 13],
             vamp: &[2, 7, 10, 14],
             puncture: &[3, 8, 11, 15],
+            acid: &[0, 3, 6, 7, 10, 13, 14],
             bass_groove: Groove::Push,
             vamp_groove: Groove::Late,
             puncture_groove: Groove::Broken,
@@ -642,6 +661,7 @@ fn rhythm_template(concept: RhythmConcept) -> RhythmTemplate {
             bass: &[0, 3, 6, 8, 11, 14],
             vamp: &[2, 6, 10, 14],
             puncture: &[7, 15],
+            acid: &[0, 3, 6, 7, 10, 11, 14],
             bass_groove: Groove::Straight,
             vamp_groove: Groove::Late,
             puncture_groove: Groove::Late,
@@ -657,6 +677,7 @@ fn rhythm_template(concept: RhythmConcept) -> RhythmTemplate {
             bass: &[0, 5, 7, 10],
             vamp: &[0, 5, 11, 14],
             puncture: &[3, 6, 9, 13, 15],
+            acid: &[0, 3, 6, 7, 10, 13, 14, 15],
             bass_groove: Groove::Broken,
             vamp_groove: Groove::Straight,
             puncture_groove: Groove::Push,
@@ -672,6 +693,7 @@ fn rhythm_template(concept: RhythmConcept) -> RhythmTemplate {
             bass: &[0, 6, 9],
             vamp: &[0, 6, 12],
             puncture: &[5, 11, 15],
+            acid: &[0, 5, 6, 10, 13, 14],
             bass_groove: Groove::Late,
             vamp_groove: Groove::Late,
             puncture_groove: Groove::Broken,
@@ -687,6 +709,7 @@ fn rhythm_template(concept: RhythmConcept) -> RhythmTemplate {
             bass: &[0, 7, 13],
             vamp: &[0, 11],
             puncture: &[7, 15],
+            acid: &[0, 3, 6, 7, 10, 13, 14, 15],
             bass_groove: Groove::Broken,
             vamp_groove: Groove::Broken,
             puncture_groove: Groove::Push,
@@ -702,6 +725,7 @@ fn rhythm_template(concept: RhythmConcept) -> RhythmTemplate {
             bass: &[0, 7, 10],
             vamp: &[2, 11],
             puncture: &[6, 15],
+            acid: &[0, 5, 6, 10, 13, 14],
             bass_groove: Groove::Late,
             vamp_groove: Groove::Broken,
             puncture_groove: Groove::Late,
@@ -717,6 +741,7 @@ fn rhythm_template(concept: RhythmConcept) -> RhythmTemplate {
             bass: &[0, 6, 11, 15],
             vamp: &[2, 7, 10, 14],
             puncture: &[5, 13],
+            acid: &[0, 3, 6, 7, 11, 14, 15],
             bass_groove: Groove::Push,
             vamp_groove: Groove::Straight,
             puncture_groove: Groove::Late,
@@ -732,6 +757,7 @@ fn rhythm_template(concept: RhythmConcept) -> RhythmTemplate {
             bass: &[0, 3, 8, 11, 14],
             vamp: &[2, 10],
             puncture: &[6, 14],
+            acid: &[0, 3, 6, 7, 8, 11, 14],
             bass_groove: Groove::Straight,
             vamp_groove: Groove::Broken,
             puncture_groove: Groove::Push,
@@ -784,6 +810,8 @@ fn empty_steps() -> Vec<Step> {
             velocity: 100,
             gate: 50,
             probability: 100,
+            accent: false,
+            slide: false,
         })
         .collect()
 }
@@ -818,6 +846,68 @@ fn bass_steps(
             },
             gate: if position >= 60 { gate.min(36) } else { gate },
             probability,
+            accent: false,
+            slide: false,
+        };
+    }
+    steps
+}
+
+fn acid_steps(
+    positions: &[usize],
+    settings: &SeedSettings,
+    random: &mut SeededRandom,
+    probability: u8,
+) -> Vec<Step> {
+    let root = 36 + settings.root;
+    let degrees: &[u8] = match settings.harmony {
+        HarmonyColor::Dorian => &[0, 2, 3, 5, 7, 9, 10, 12],
+        HarmonyColor::House => &[0, 3, 5, 7, 10, 12, 15],
+        HarmonyColor::JazzFunk => &[0, 2, 3, 5, 7, 9, 10, 11, 12],
+        HarmonyColor::Open => &[0, 2, 5, 7, 10, 12, 17],
+    };
+    let motif: &[usize] = match settings.bass_role {
+        BassRole::Anchor => &[0, 2, 0, 4, 1, 0, 6, 3],
+        BassRole::Answer => &[0, 4, 2, 5, 3, 1, 6, 4],
+        BassRole::Roam => &[0, 1, 3, 4, 6, 5, 2, 7],
+        BassRole::Holes => &[0, 4, 0, 6, 2, 0, 5, 1],
+    };
+    let mut steps = empty_steps();
+    let mut event_in_bar = [0usize; 4];
+
+    for (event_index, position) in positions.iter().copied().enumerate() {
+        let bar = position / BAR_STEPS;
+        let local_event = event_in_bar[bar];
+        event_in_bar[bar] += 1;
+        let degree_index = motif[(event_index + usize::from(bar == 1)) % motif.len()] % degrees.len();
+        let mut pitch = root + degrees[degree_index];
+
+        // Bar three supplies the characteristic register flare; the final bar folds back toward
+        // the root so the acid line reads as part of the shared four-bar phrase.
+        if bar == 2 && (local_event == 0 || position % BAR_STEPS >= 12) {
+            pitch = pitch.saturating_add(12).min(72);
+        } else if bar == 3 && position % BAR_STEPS >= 13 {
+            pitch = root + degrees[(1 + local_event) % degrees.len().min(4)];
+        }
+        if random.next() > 0.82 && position % BAR_STEPS != 0 {
+            pitch = root + degrees[(degree_index + 1) % degrees.len()];
+        }
+
+        let next_is_adjacent = positions
+            .get(event_index + 1)
+            .is_some_and(|next| *next == position + 1 && *next / BAR_STEPS == bar);
+        let strong_syncopation = matches!(position % BAR_STEPS, 3 | 6 | 10 | 14 | 15);
+        let accent = position % BAR_STEPS == 0
+            || (strong_syncopation && (local_event + bar) % 2 == 0)
+            || (settings.energy == Energy::High && local_event % 3 == 1);
+
+        steps[position] = Step {
+            notes: vec![pitch],
+            velocity: if accent { 127 } else { 92 },
+            gate: if next_is_adjacent { 100 } else { 54 },
+            probability,
+            accent,
+            slide: next_is_adjacent,
         };
     }
     steps
@@ -841,6 +931,8 @@ fn melodic_steps(
             },
             gate,
             probability,
+            accent: false,
+            slide: false,
         };
     }
     steps
@@ -889,6 +981,8 @@ fn chord_steps(
             velocity,
             gate: if position >= 60 { gate.min(34) } else { gate },
             probability,
+            accent: false,
+            slide: false,
         };
     }
     steps
@@ -976,6 +1070,8 @@ fn drum_track(
             },
             gate,
             probability,
+            accent: false,
+            slide: false,
         };
     }
     GeneratedTrack {
@@ -1112,7 +1208,7 @@ mod tests {
     #[test]
     fn creates_a_four_bar_frame_with_one_style_aware_drifter() {
         let result = generate_seed(&settings(), 1);
-        assert_eq!(result.tracks.len(), 10);
+        assert_eq!(result.tracks.len(), 11);
         assert!(result.tracks.iter().all(|track| track.steps.len() == 64));
         assert_eq!(
             result
@@ -1281,6 +1377,31 @@ mod tests {
     }
 
     #[test]
+    fn td3_lane_is_monophonic_and_generates_acid_articulation_and_octave_motion() {
+        for energy in [Energy::Low, Energy::Medium, Energy::High] {
+            let mut input = settings();
+            input.energy = energy;
+            let result = generate_seed(&input, 6);
+            let acid = result
+                .tracks
+                .iter()
+                .find(|track| track.id == TrackId::Td3Acid)
+                .unwrap();
+            let active = acid
+                .steps
+                .iter()
+                .filter(|step| !step.notes.is_empty())
+                .collect::<Vec<_>>();
+
+            assert_eq!(acid.length, PHRASE_STEPS);
+            assert!(active.iter().all(|step| step.notes.len() == 1));
+            assert!(active.iter().any(|step| step.accent && step.velocity == 127));
+            assert!(active.iter().any(|step| step.slide && step.gate == 100));
+            assert!(active.iter().any(|step| step.notes[0] >= 48 + input.root));
+        }
+    }
+
+    #[test]
     fn the_leader_develops_while_an_anchor_stays_recognizable() {
         let result = generate_seed(&settings(), 7);
         let bass = result
@@ -1392,7 +1513,8 @@ mod tests {
         let encoded = serde_json::to_value(generate_seed(&decoded, 3)).unwrap();
         assert_eq!(encoded["tracks"][0]["id"], "dn-bass");
         assert_eq!(encoded["tracks"][0]["length"], 64);
-        assert_eq!(encoded["tracks"][3]["id"], "dk-kick");
+        assert_eq!(encoded["tracks"][3]["id"], "td3-acid");
+        assert_eq!(encoded["tracks"][4]["id"], "dk-kick");
         assert!(encoded["tracks"][0].get("tone").is_some());
         assert!(encoded["tracks"][3].get("tone").is_none());
     }

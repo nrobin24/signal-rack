@@ -1,6 +1,7 @@
-export type RackTarget = 'digitone' | 'digitakt'
-export type GeneratorTarget = 'all' | 'all-digitone' | 'all-digitakt' | TrackId
+export type RackTarget = 'digitone' | 'digitakt' | 'td3'
+export type GeneratorTarget = 'all' | 'all-digitone' | 'all-digitakt' | 'all-td3' | TrackId
 export type DigitoneTrackId = 'dn-bass' | 'dn-vamp' | 'dn-puncture'
+export type Td3TrackId = 'td3-acid'
 export type DigitaktTrackId =
   | 'dk-kick'
   | 'dk-snare'
@@ -9,7 +10,7 @@ export type DigitaktTrackId =
   | 'dk-rim'
   | 'dk-clap'
   | 'dk-texture'
-export type TrackId = DigitoneTrackId | DigitaktTrackId
+export type TrackId = DigitoneTrackId | DigitaktTrackId | Td3TrackId
 export type Groove = 'straight' | 'push' | 'late' | 'broken'
 export type SceneId = 'full' | 'bass' | 'space' | 'drop'
 export type DigitaktSceneId = 'full' | 'core' | 'tops' | 'drop'
@@ -34,6 +35,8 @@ export type Step = {
   velocity: number
   gate: number
   probability: number
+  accent?: boolean
+  slide?: boolean
 }
 
 export type TrackConfig = {

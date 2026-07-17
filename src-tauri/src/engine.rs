@@ -89,6 +89,7 @@ pub struct EngineStatus {
 pub struct OutputNames {
     pub digitone: Option<String>,
     pub digitakt: Option<String>,
+    pub td3: Option<String>,
 }
 
 pub fn midi_port_names() -> Result<Vec<String>, String> {
@@ -155,6 +156,7 @@ pub fn status(state: &EngineState) -> Result<EngineStatus, String> {
         output_names: OutputNames {
             digitone: engine.output_name(RackTarget::Digitone),
             digitakt: engine.output_name(RackTarget::Digitakt),
+            td3: engine.output_name(RackTarget::Td3),
         },
     })
 }
@@ -237,7 +239,7 @@ pub fn start(state: &EngineState, app: AppHandle) -> Result<(), String> {
         engine.run_id = engine.run_id.wrapping_add(1);
         engine.stop_sender = Some(sender);
         engine.send_all_macros();
-        engine.broadcast(&[0xfa]);
+        engine.broadcast_transport(&[0xfa]);
         engine.run_id
     };
 
@@ -310,7 +312,7 @@ fn stop_inner(state: &EngineState, app: &AppHandle, emit: bool) -> Result<(), St
         let was_playing = engine.playing;
         engine.run_id = engine.run_id.wrapping_add(1);
         if was_playing {
-            engine.broadcast(&[0xfc]);
+            engine.broadcast_transport(&[0xfc]);
         }
         engine.playing = false;
         engine.all_notes_off();
@@ -333,7 +335,9 @@ impl Engine {
 
     fn select_output(&mut self, target: RackTarget, port: Option<usize>) -> Result<(), String> {
         if self.playing {
-            let _ = self.send_message(target, &[0xfc]);
+            if target != RackTarget::Td3 {
+                let _ = self.send_message(target, &[0xfc]);
+            }
             let tracks: Vec<_> = self
                 .config
                 .tracks
@@ -354,7 +358,7 @@ impl Engine {
         if let Some(connection) = self.connections.get_mut(&port_index) {
             connection.targets.insert(target);
             self.target_ports.insert(target, port_index);
-            if self.playing {
+            if self.playing && target != RackTarget::Td3 {
                 let _ = connection.connection.send(&[0xfa]);
             }
             return Ok(());
@@ -371,7 +375,7 @@ impl Engine {
         let mut connection = output
             .connect(selected, "Signal Rack output")
             .map_err(|error| error.to_string())?;
-        if self.playing {
+        if self.playing && target != RackTarget::Td3 {
             let _ = connection.send(&[0xfa]);
         }
         self.connections.insert(
@@ -412,9 +416,14 @@ impl Engine {
             .map_err(|error| error.to_string())
     }
 
-    fn broadcast(&mut self, message: &[u8]) {
+    fn broadcast_transport(&mut self, message: &[u8]) {
         for connection in self.connections.values_mut() {
-            let _ = connection.connection.send(message);
+            // The TD-3 lane uses direct notes. Do not start its onboard pattern sequencer when it
+            // is the only target on a port. A shared Elektron/TD-3 port still receives the global
+            // transport because system-real-time messages cannot be addressed per MIDI channel.
+            if sends_transport(&connection.targets) {
+                let _ = connection.connection.send(message);
+            }
         }
     }
 
@@ -463,6 +472,7 @@ impl Engine {
                     ],
                 );
             }
+            RackTarget::Td3 => {}
         }
     }
 
@@ -476,6 +486,7 @@ impl Engine {
                 let value = value.round().clamp(0.0, 127.0) as u8;
                 let _ = self.send_message(RackTarget::Digitakt, &[status, 82, value]);
             }
+            RackTarget::Td3 => {}
         }
     }
 
@@ -558,6 +569,12 @@ impl Engine {
                 (DigitaktSceneId::Drop, _) => 0.0,
                 _ => 1.0,
             },
+            RackTarget::Td3 => match self.config.scene {
+                SceneId::Full => 1.0,
+                SceneId::Bass => 1.0,
+                SceneId::Space => 0.55,
+                SceneId::Drop => 0.0,
+            },
         }
     }
 
@@ -594,16 +611,14 @@ impl Engine {
             return;
         }
         let notes = modulated_notes(&step.notes, &track, &self.config.lfos, self.pulse);
+        let velocity = note_velocity(track.target, &step);
         for note in &notes {
             let _ = self.send_message(
                 track.target,
-                &[0x90 + track.channel.saturating_sub(1), *note, step.velocity],
+                &[0x90 + track.channel.saturating_sub(1), *note, velocity],
             );
         }
-        let release = self
-            .step_duration()
-            .mul_f64(f64::from(step.gate) / 100.0)
-            .max(Duration::from_millis(12));
+        let release = note_release(track.target, &step, self.step_duration());
         self.scheduled.push(ScheduledEvent {
             due: now + release,
             kind: ScheduledEventKind::NoteOff {
@@ -673,7 +688,7 @@ impl Engine {
     }
 
     fn tick(&mut self, app: &AppHandle, now: Instant) {
-        self.broadcast(&[0xf8]);
+        self.broadcast_transport(&[0xf8]);
         if self.pulse % 6 == 0 {
             self.play_step((self.pulse / 6) as usize, app, now);
             self.send_lfo_macros();
@@ -714,6 +729,30 @@ impl Engine {
 
     fn next_due(&self) -> Option<Instant> {
         self.scheduled.iter().map(|event| event.due).min()
+    }
+}
+
+fn sends_transport(targets: &HashSet<RackTarget>) -> bool {
+    targets.iter().any(|target| *target != RackTarget::Td3)
+}
+
+fn note_velocity(target: RackTarget, step: &crate::model::Step) -> u8 {
+    if target == RackTarget::Td3 && step.accent {
+        127
+    } else {
+        step.velocity
+    }
+}
+
+fn note_release(target: RackTarget, step: &crate::model::Step, step_duration: Duration) -> Duration {
+    if target == RackTarget::Td3 && step.slide {
+        // The standard TD-3 exposes no slide CC. A short note overlap makes the following note
+        // legato, which is how external sequencers drive its 303-style glide.
+        step_duration + Duration::from_millis(8)
+    } else {
+        step_duration
+            .mul_f64(f64::from(step.gate) / 100.0)
+            .max(Duration::from_millis(12))
     }
 }
 
@@ -766,6 +805,7 @@ fn track_id_name(id: TrackId) -> &'static str {
         TrackId::DnBass => "dn-bass",
         TrackId::DnVamp => "dn-vamp",
         TrackId::DnPuncture => "dn-puncture",
+        TrackId::Td3Acid => "td3-acid",
         TrackId::DkKick => "dk-kick",
         TrackId::DkSnare => "dk-snare",
         TrackId::DkClosedHat => "dk-closed-hat",
@@ -826,6 +866,34 @@ mod tests {
         let recovered_bpm = 60.0 / interval.as_secs_f64() / 24.0;
         assert!((recovered_bpm - 132.0).abs() < 0.000_001);
         assert_eq!(interval.as_micros(), 18_939);
+    }
+
+    #[test]
+    fn td3_accent_uses_max_velocity_and_slide_overlaps_the_next_step() {
+        let step = crate::model::Step {
+            notes: vec![48],
+            velocity: 91,
+            gate: 54,
+            probability: 100,
+            accent: true,
+            slide: true,
+        };
+        let duration = Duration::from_millis(125);
+
+        assert_eq!(note_velocity(RackTarget::Td3, &step), 127);
+        assert_eq!(note_velocity(RackTarget::Digitone, &step), 91);
+        assert_eq!(note_release(RackTarget::Td3, &step, duration), Duration::from_millis(133));
+        assert_eq!(note_release(RackTarget::Digitone, &step, duration), Duration::from_micros(67_500));
+    }
+
+    #[test]
+    fn td3_only_ports_do_not_start_the_internal_pattern_sequencer() {
+        assert!(!sends_transport(&HashSet::from([RackTarget::Td3])));
+        assert!(sends_transport(&HashSet::from([RackTarget::Digitone])));
+        assert!(sends_transport(&HashSet::from([
+            RackTarget::Digitakt,
+            RackTarget::Td3,
+        ])));
     }
 
     #[test]

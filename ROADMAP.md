@@ -725,6 +725,8 @@ Reuse the RD-6 drum-profile architecture:
 
 ### 6.2 TD-3
 
+Implementation status: the first TD-3 profile is available with one monophonic lane, independent MIDI routing/channel setup, phrase-generated scale motion, accents, adjacent-note slides, and octave changes. Accent is rendered as high note-on velocity and slide as a short legato overlap because the standard TD-3 MIDI chart exposes neither as a dedicated CC.
+
 Reuse the Pro-1 monophonic foundation, then add explicit articulation behavior:
 
 - Accent.

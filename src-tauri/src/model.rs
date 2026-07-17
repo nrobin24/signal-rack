@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub enum RackTarget {
     Digitone,
     Digitakt,
+    Td3,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -15,6 +16,8 @@ pub enum TrackId {
     DnVamp,
     #[serde(rename = "dn-puncture")]
     DnPuncture,
+    #[serde(rename = "td3-acid")]
+    Td3Acid,
     #[serde(rename = "dk-kick")]
     DkKick,
     #[serde(rename = "dk-snare")]
@@ -145,6 +148,10 @@ pub struct Step {
     pub velocity: u8,
     pub gate: u8,
     pub probability: u8,
+    #[serde(default)]
+    pub accent: bool,
+    #[serde(default)]
+    pub slide: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

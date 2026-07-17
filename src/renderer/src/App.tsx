@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { DigitaktSceneId, DigitaktTrackId, DigitoneTrackId, GeneratorTarget, Groove, LfoConfig, LfoId, LfoPeriod, LfoPoint, LfoShape, RackTarget, SceneId, SequencerConfig, Step, TrackConfig, TrackId } from '../../shared/types'
+import type { DigitaktSceneId, DigitaktTrackId, DigitoneTrackId, GeneratorTarget, Groove, LfoConfig, LfoId, LfoPeriod, LfoPoint, LfoShape, RackTarget, SceneId, SequencerConfig, Step, Td3TrackId, TrackConfig, TrackId } from '../../shared/types'
 import { backend } from './backend'
 import GeneratorLab, { type LabCandidate, type LabCycleMode } from './GeneratorLab'
 import {
@@ -42,9 +42,18 @@ type DigitaktTrack = TrackConfig & {
   tone: number
   space: number
 }
+type Td3Track = TrackConfig & {
+  id: Td3TrackId
+  target: 'td3'
+  label: string
+  shortLabel: string
+  color: Color
+  octave: number
+}
 type MacroSource = 'off' | 'manual' | LfoId
 type SelectedStep = { trackId: DigitoneTrackId; index: number | null }
 type SelectedDrumStep = { trackId: DigitaktTrackId; index: number | null }
+type SelectedAcidStep = { trackId: Td3TrackId; index: number | null }
 type OutputSelection = Record<RackTarget, number | null>
 type SequenceView = 'detail' | 'overview'
 type AppMode = 'rack' | 'generator-lab'
@@ -61,6 +70,7 @@ const euclideanFallbackNotes: Record<TrackId, number[]> = {
   'dn-bass': [37],
   'dn-vamp': [52, 59, 63],
   'dn-puncture': [73],
+  'td3-acid': [37],
   'dk-kick': [60],
   'dk-snare': [60],
   'dk-closed-hat': [60],
@@ -100,6 +110,12 @@ const initialDigitaktTracks: DigitaktTrack[] = [
   drumTrack('dk-clap', 'T6 / CLAP', 'pink', 6, [4, 12], 102, 'late'),
   drumTrack('dk-texture', 'T7 / TEXTURE', 'sand', 7, [7, 14], 76, 'broken')
 ]
+
+const initialTd3Tracks: Td3Track[] = [{
+  id: 'td3-acid', target: 'td3', label: 'ACID LINE', shortLabel: 'ACID', color: 'pink', channel: 1, octave: 0, length: 16,
+  groove: 'straight', muted: false,
+  steps: defaultSteps([[37], null, null, [44], null, [40], [41], null, null, null, [37], [49], null, null, [47], [44]], 92, 54)
+}]
 
 const defaultDrawnPoints: LfoPoint[] = [
   { x: 0, y: 0 },
@@ -156,13 +172,14 @@ export default function App(): React.JSX.Element {
   const [mode, setMode] = useState<AppMode>('rack')
   const [bpm, setBpm] = useState(132)
   const [outputs, setOutputs] = useState<string[]>([])
-  const [selectedOutputs, setSelectedOutputs] = useState<OutputSelection>({ digitone: null, digitakt: null })
+  const [selectedOutputs, setSelectedOutputs] = useState<OutputSelection>({ digitone: null, digitakt: null, td3: null })
   const [playing, setPlaying] = useState(false)
   const [currentSteps, setCurrentSteps] = useState<Partial<Record<TrackId, number>>>({})
   const [lfoLevels, setLfoLevels] = useState<Record<LfoId, number>>(zeroLfoLevels)
   const [digitoneTracks, setDigitoneTracks] = useState<DigitoneTrack[]>(initialDigitoneTracks)
   const [digitaktTracks, setDigitaktTracks] = useState<DigitaktTrack[]>(initialDigitaktTracks)
-  const [instrumentMutes, setInstrumentMutes] = useState<Record<RackTarget, boolean>>({ digitone: false, digitakt: false })
+  const [td3Tracks, setTd3Tracks] = useState<Td3Track[]>(initialTd3Tracks)
+  const [instrumentMutes, setInstrumentMutes] = useState<Record<RackTarget, boolean>>({ digitone: false, digitakt: false, td3: false })
   const [lfos, setLfos] = useState<LfoConfig[]>(initialLfos)
   const [activeScene, setActiveScene] = useState<UnifiedSceneId>('full')
   const [sceneEnabled, setSceneEnabled] = useState<Record<SceneSequenceId, boolean>>(initialSceneEnabled)
@@ -172,11 +189,14 @@ export default function App(): React.JSX.Element {
   const digitaktScene = unifiedSceneInfo[activeScene].digitakt
   const [selectedStep, setSelectedStep] = useState<SelectedStep>({ trackId: 'dn-bass', index: null })
   const [selectedDrumStep, setSelectedDrumStep] = useState<SelectedDrumStep>({ trackId: 'dk-kick', index: null })
+  const [selectedAcidStep, setSelectedAcidStep] = useState<SelectedAcidStep>({ trackId: 'td3-acid', index: null })
   const [digitoneView, setDigitoneView] = useState<SequenceView>('detail')
   const [digitonePage, setDigitonePage] = useState(0)
   const [digitaktView, setDigitaktView] = useState<SequenceView>('detail')
   const [digitaktPage, setDigitaktPage] = useState(0)
-  const [seedSettings, setSeedSettings] = useState<SeedSettings>({ root: 1, harmony: 'house', bassRole: 'answer', rhythm: 'uk-bass', energy: 'medium', shape: 'aa-turn', leader: 'bass', cycleMode: 'auto' })
+  const [td3View, setTd3View] = useState<SequenceView>('detail')
+  const [td3Page, setTd3Page] = useState(0)
+  const [seedSettings, setSeedSettings] = useState<SeedSettings>({ root: 1, harmony: 'house', bassRole: 'answer', rhythm: 'house', energy: 'medium', shape: 'aa-turn', leader: 'bass', cycleMode: 'auto' })
   const [lastSeed, setLastSeed] = useState('No generated phrase yet')
   const [seedBusy, setSeedBusy] = useState(false)
   const [arpeggioRootSync, setArpeggioRootSync] = useState({ root: seedSettings.root, revision: 0 })
@@ -204,14 +224,15 @@ export default function App(): React.JSX.Element {
       setOutputs(nextOutputs)
       setSelectedOutputs({
         digitone: status.outputNames.digitone === null ? null : nextOutputs.indexOf(status.outputNames.digitone),
-        digitakt: status.outputNames.digitakt === null ? null : nextOutputs.indexOf(status.outputNames.digitakt)
+        digitakt: status.outputNames.digitakt === null ? null : nextOutputs.indexOf(status.outputNames.digitakt),
+        td3: status.outputNames.td3 === null ? null : nextOutputs.indexOf(status.outputNames.td3)
       })
       setPlaying(status.playing)
     }).catch(console.error)
     return () => { disposed = true; if (labStopTimer.current !== null) window.clearTimeout(labStopTimer.current); unsubscribeStep?.(); unsubscribeLfo?.(); unsubscribeClock?.(); unsubscribeStop?.() }
   }, [])
 
-  function config(nextDigitone = digitoneTracks, nextDigitakt = digitaktTracks, nextScene = scene, nextBpm = bpm, nextLfos = lfos, nextInstrumentMutes = instrumentMutes, nextDigitaktScene = digitaktScene): SequencerConfig {
+  function config(nextDigitone = digitoneTracks, nextDigitakt = digitaktTracks, nextScene = scene, nextBpm = bpm, nextLfos = lfos, nextInstrumentMutes = instrumentMutes, nextDigitaktScene = digitaktScene, nextTd3 = td3Tracks): SequencerConfig {
     const digitoneConfig: TrackConfig[] = nextDigitone.map(({ id, channel, octave, length, groove, muted, tone, space, toneEnabled, spaceEnabled, toneLfo, spaceLfo, octaveLfo, toneLfoDepth, spaceLfoDepth, octaveLfoDepth, steps }) => ({
       id, target: 'digitone', channel, length, groove, muted: muted || nextInstrumentMutes.digitone, tone, space, toneEnabled, spaceEnabled, toneLfo, spaceLfo, octaveLfo, toneLfoDepth, spaceLfoDepth, octaveLfoDepth,
       steps: steps.map((step) => ({ ...step, notes: step.notes.map((note) => clampNote(note + octave * 12)) }))
@@ -219,7 +240,11 @@ export default function App(): React.JSX.Element {
     const digitaktConfig: TrackConfig[] = nextDigitakt.map(({ id, channel, length, groove, muted, tone, space, toneEnabled, spaceEnabled, toneLfo, spaceLfo, toneLfoDepth, spaceLfoDepth, steps }) => ({
       id, target: 'digitakt', channel, length, groove, muted: muted || nextInstrumentMutes.digitakt, tone, space, toneEnabled, spaceEnabled, toneLfo, spaceLfo, toneLfoDepth, spaceLfoDepth, steps
     }))
-    return { bpm: nextBpm, scene: nextScene, digitaktScene: nextDigitaktScene, lfos: nextLfos, tracks: [...digitoneConfig, ...digitaktConfig] }
+    const td3Config: TrackConfig[] = nextTd3.map(({ id, channel, octave, length, groove, muted, steps }) => ({
+      id, target: 'td3', channel, length, groove, muted: muted || nextInstrumentMutes.td3,
+      steps: steps.map((step) => ({ ...step, notes: step.notes.slice(0, 1).map((note) => clampNote(note + octave * 12)) }))
+    }))
+    return { bpm: nextBpm, scene: nextScene, digitaktScene: nextDigitaktScene, lfos: nextLfos, tracks: [...digitoneConfig, ...digitaktConfig, ...td3Config] }
   }
 
   async function selectModuleOutput(target: RackTarget, port: number | null): Promise<void> {
@@ -230,8 +255,8 @@ export default function App(): React.JSX.Element {
 
   async function refreshOutputs(): Promise<void> {
     const [nextOutputs, status] = await Promise.all([backend.listOutputs(), backend.getStatus()])
-    const nextSelection: OutputSelection = { digitone: null, digitakt: null }
-    for (const target of ['digitone', 'digitakt'] as RackTarget[]) {
+    const nextSelection: OutputSelection = { digitone: null, digitakt: null, td3: null }
+    for (const target of ['digitone', 'digitakt', 'td3'] as RackTarget[]) {
       const priorName = status.outputNames[target] ?? (selectedOutputs[target] === null ? null : outputs[selectedOutputs[target]])
       const nextPort = priorName === null ? null : nextOutputs.indexOf(priorName)
       nextSelection[target] = nextPort === -1 ? null : nextPort
@@ -243,7 +268,7 @@ export default function App(): React.JSX.Element {
   }
 
   async function startTransport(): Promise<void> {
-    if (selectedOutputs.digitone === null && selectedOutputs.digitakt === null) return
+    if (selectedOutputs.digitone === null && selectedOutputs.digitakt === null && selectedOutputs.td3 === null) return
     await backend.configure(config())
     await backend.start()
     setPlaying(true)
@@ -278,6 +303,14 @@ export default function App(): React.JSX.Element {
     setDigitaktTracks((current) => {
       const next = current.map((track) => track.id === trackId ? change(track) : track)
       if (playing) void backend.configure(config(digitoneTracks, next))
+      return next
+    })
+  }
+
+  function updateTd3Track(trackId: Td3TrackId, change: (track: Td3Track) => Td3Track): void {
+    setTd3Tracks((current) => {
+      const next = current.map((track) => track.id === trackId ? change(track) : track)
+      if (playing) void backend.configure(config(digitoneTracks, digitaktTracks, scene, bpm, lfos, instrumentMutes, digitaktScene, next))
       return next
     })
   }
@@ -320,7 +353,7 @@ export default function App(): React.JSX.Element {
   function changeMacroDepth(trackId: TrackId, macro: 'tone' | 'space', depth: number): void {
     const depthKey = macro === 'tone' ? 'toneLfoDepth' : 'spaceLfoDepth'
     if (trackId.startsWith('dn-')) updateDigitoneTrack(trackId as DigitoneTrackId, (track) => ({ ...track, [depthKey]: depth }))
-    else updateDigitaktTrack(trackId as DigitaktTrackId, (track) => ({ ...track, [depthKey]: depth }))
+    else if (trackId.startsWith('dk-')) updateDigitaktTrack(trackId as DigitaktTrackId, (track) => ({ ...track, [depthKey]: depth }))
   }
 
   function toggleInstrumentMute(target: RackTarget): void {
@@ -363,17 +396,19 @@ export default function App(): React.JSX.Element {
     const steps = Math.max(2, Math.min(stepCount, Math.round(settings.steps)))
     const hits = Math.max(1, Math.min(steps, Math.round(settings.hits)))
     const rotation = ((Math.round(settings.rotation) % steps) + steps) % steps
-    const replace = <Track extends DigitoneTrack | DigitaktTrack>(track: Track): Track => ({
+    const replace = <Track extends DigitoneTrack | DigitaktTrack | Td3Track>(track: Track): Track => ({
       ...track,
       length: steps,
       steps: replaceWithEuclideanSteps(track.steps, { hits, steps, rotation }, euclideanFallbackNotes[track.id])
     })
     const nextDigitone = digitoneTracks.map((track) => targetIncludes(settings.trackId, track.id) ? replace(track) : track)
     const nextDigitakt = digitaktTracks.map((track) => targetIncludes(settings.trackId, track.id) ? replace(track) : track)
+    const nextTd3 = td3Tracks.map((track) => targetIncludes(settings.trackId, track.id) ? replace(track) : track)
 
     setDigitoneTracks(nextDigitone)
     setDigitaktTracks(nextDigitakt)
-    void backend.configure(config(nextDigitone, nextDigitakt))
+    setTd3Tracks(nextTd3)
+    void backend.configure(config(nextDigitone, nextDigitakt, scene, bpm, lfos, instrumentMutes, digitaktScene, nextTd3))
   }
 
   function applyArpeggio(settings: ArpeggioSettings): void {
@@ -383,12 +418,16 @@ export default function App(): React.JSX.Element {
     const nextDigitakt = digitaktTracks.map((track) => targetIncludes(settings.trackId, track.id)
       ? { ...track, steps: applyArpeggioToSteps(track.steps, track.length, settings) }
       : track)
+    const nextTd3 = td3Tracks.map((track) => targetIncludes(settings.trackId, track.id)
+      ? { ...track, steps: applyArpeggioToSteps(track.steps, track.length, settings).map((step) => ({ ...step, notes: step.notes.slice(0, 1), accent: false, slide: false })) }
+      : track)
     setDigitoneTracks(nextDigitone)
     setDigitaktTracks(nextDigitakt)
-    void backend.configure(config(nextDigitone, nextDigitakt))
+    setTd3Tracks(nextTd3)
+    void backend.configure(config(nextDigitone, nextDigitakt, scene, bpm, lfos, instrumentMutes, digitaktScene, nextTd3))
   }
 
-  async function applyGeneratedSeed(generated: Awaited<ReturnType<typeof backend.generateSeed>>, target: GeneratorTarget = 'all'): Promise<{ nextDigitone: DigitoneTrack[]; nextDigitakt: DigitaktTrack[] }> {
+  async function applyGeneratedSeed(generated: Awaited<ReturnType<typeof backend.generateSeed>>, target: GeneratorTarget = 'all'): Promise<{ nextDigitone: DigitoneTrack[]; nextDigitakt: DigitaktTrack[]; nextTd3: Td3Track[] }> {
     const generatedById = new Map(generated.tracks.map((track) => [track.id, track]))
     const nextDigitone = digitoneTracks.map((track) => {
       const next = generatedById.get(track.id)
@@ -398,11 +437,16 @@ export default function App(): React.JSX.Element {
       const next = generatedById.get(track.id)
       return next && targetIncludes(target, track.id) ? { ...track, length: next.length, groove: next.groove, steps: normalizeSteps(next.steps) } : track
     })
+    const nextTd3 = td3Tracks.map((track) => {
+      const next = generatedById.get(track.id)
+      return next && targetIncludes(target, track.id) ? { ...track, length: next.length, groove: next.groove, steps: normalizeSteps(next.steps) } : track
+    })
     setDigitoneTracks(nextDigitone)
     setDigitaktTracks(nextDigitakt)
-    await backend.configure(config(nextDigitone, nextDigitakt))
+    setTd3Tracks(nextTd3)
+    await backend.configure(config(nextDigitone, nextDigitakt, scene, bpm, lfos, instrumentMutes, digitaktScene, nextTd3))
     await Promise.all([...nextDigitone, ...nextDigitakt].filter((track) => targetIncludes(target, track.id)).map((track) => backend.setMacros(track.id, track.tone, track.space)))
-    return { nextDigitone, nextDigitakt }
+    return { nextDigitone, nextDigitakt, nextTd3 }
   }
 
   async function generateLabBatch(settings: SeedSettings, count: number): Promise<Array<{ variation: number; generated: Awaited<ReturnType<typeof backend.generateSeed>> }>> {
@@ -415,7 +459,7 @@ export default function App(): React.JSX.Element {
   }
 
   async function auditionLabCandidate(candidate: LabCandidate, cycles: LabCycleMode): Promise<void> {
-    if (selectedOutputs.digitone === null && selectedOutputs.digitakt === null) return
+    if (selectedOutputs.digitone === null && selectedOutputs.digitakt === null && selectedOutputs.td3 === null) return
     if (labStopTimer.current !== null) window.clearTimeout(labStopTimer.current)
     if (playing) await backend.stop()
     await applyGeneratedSeed(candidate.generated)
@@ -445,7 +489,10 @@ export default function App(): React.JSX.Element {
   const selectedDrumTrack = digitaktTracks.find((track) => track.id === selectedDrumStep.trackId) ?? digitaktTracks[0]
   const selectedDrumIndex = selectedDrumStep.index
   const selectedDrum = selectedDrumIndex === null ? null : selectedDrumTrack.steps[selectedDrumIndex]
-  const armedCount = Number(selectedOutputs.digitone !== null) + Number(selectedOutputs.digitakt !== null)
+  const selectedAcidTrack = td3Tracks.find((track) => track.id === selectedAcidStep.trackId) ?? td3Tracks[0]
+  const selectedAcidIndex = selectedAcidStep.index
+  const selectedAcid = selectedAcidIndex === null ? null : selectedAcidTrack.steps[selectedAcidIndex]
+  const armedCount = Number(selectedOutputs.digitone !== null) + Number(selectedOutputs.digitakt !== null) + Number(selectedOutputs.td3 !== null)
 
   return <main className="app-shell">
     <header className="transport">
@@ -455,18 +502,18 @@ export default function App(): React.JSX.Element {
         <button className="play" onClick={startTransport} disabled={mode === 'generator-lab' || armedCount === 0 || playing}>▶ PLAY</button>
         <button className="stop" onClick={stopTransport} disabled={!playing}>■ STOP</button>
       </div>
-      <div className="rack-status"><span>{armedCount}/2 INSTRUMENTS ARMED</span><button className={mode === 'generator-lab' ? 'mode selected' : 'mode'} onClick={() => mode === 'generator-lab' ? exitGeneratorLab() : enterGeneratorLab()}>{mode === 'generator-lab' ? 'RACK MODE' : 'GENERATOR LAB'}</button><button className="refresh" onClick={refreshOutputs} title="Rescan MIDI output devices">↻ MIDI</button></div>
+      <div className="rack-status"><span>{armedCount}/3 INSTRUMENTS ARMED</span><button className={mode === 'generator-lab' ? 'mode selected' : 'mode'} onClick={() => mode === 'generator-lab' ? exitGeneratorLab() : enterGeneratorLab()}>{mode === 'generator-lab' ? 'RACK MODE' : 'GENERATOR LAB'}</button><button className="refresh" onClick={refreshOutputs} title="Rescan MIDI output devices">↻ MIDI</button></div>
     </header>
 
     <section className={`rack rack-stack ${mode === 'generator-lab' ? 'lab-mode' : ''}`}>
       <div className="generator-column">
       {mode === 'generator-lab'
-        ? <GeneratorLab settings={seedSettings} bpm={bpm} outputNames={{ digitone: selectedOutputs.digitone === null ? null : outputs[selectedOutputs.digitone] ?? null, digitakt: selectedOutputs.digitakt === null ? null : outputs[selectedOutputs.digitakt] ?? null }} canAudition={armedCount > 0} playingCandidateId={playingCandidateId} onSettings={setSeedSettings} onGenerate={generateLabBatch} onAudition={auditionLabCandidate} onStop={stopTransport} onExport={backend.exportLabSession} onUnexportedChange={setLabHasUnexportedSession} onExit={exitGeneratorLab} />
+        ? <GeneratorLab settings={seedSettings} bpm={bpm} outputNames={{ digitone: selectedOutputs.digitone === null ? null : outputs[selectedOutputs.digitone] ?? null, digitakt: selectedOutputs.digitakt === null ? null : outputs[selectedOutputs.digitakt] ?? null, td3: selectedOutputs.td3 === null ? null : outputs[selectedOutputs.td3] ?? null }} canAudition={armedCount > 0} playingCandidateId={playingCandidateId} onSettings={setSeedSettings} onGenerate={generateLabBatch} onAudition={auditionLabCandidate} onStop={stopTransport} onExport={backend.exportLabSession} onUnexportedChange={setLabHasUnexportedSession} onExit={exitGeneratorLab} />
         : <SeedLab settings={seedSettings} onSettings={setSeedSettings} onSeed={seedRack} lastSeed={lastSeed} busy={seedBusy} />}
 
-      {mode === 'rack' && <EuclideanGenerator digitoneTracks={digitoneTracks} digitaktTracks={digitaktTracks} onGenerate={applyEuclidean} />}
+      {mode === 'rack' && <EuclideanGenerator digitoneTracks={digitoneTracks} digitaktTracks={digitaktTracks} td3Tracks={td3Tracks} onGenerate={applyEuclidean} />}
 
-      {mode === 'rack' && <ArpeggioGenerator digitoneTracks={digitoneTracks} digitaktTracks={digitaktTracks} rootSync={arpeggioRootSync} onGenerate={applyArpeggio} />}
+      {mode === 'rack' && <ArpeggioGenerator digitoneTracks={digitoneTracks} digitaktTracks={digitaktTracks} td3Tracks={td3Tracks} rootSync={arpeggioRootSync} onGenerate={applyArpeggio} />}
 
       <LfoRack lfos={lfos} levels={lfoLevels} onChange={updateLfo} />
       </div>
@@ -507,6 +554,23 @@ export default function App(): React.JSX.Element {
         {selectedDrumIndex !== null && selectedDrum && <DrumStepEditor track={selectedDrumTrack} index={selectedDrumIndex} step={selectedDrum} onClose={() => setSelectedDrumStep((current) => ({ ...current, index: null }))} onChange={(change) => updateDigitaktTrack(selectedDrumTrack.id, (track) => ({ ...track, steps: track.steps.map((step, index) => index === selectedDrumIndex ? change(step) : step) }))} />}
         </div>}
       </RackFrame>
+
+      <RackFrame className={`td3-module instrument-module ${selectedOutputs.td3 === null ? 'module-unconfigured' : instrumentMutes.td3 ? 'module-muted' : ''}`}>
+        <div className="unit-heading instrument-heading">
+          <div className="module-ident">
+            <button className={`instrument-mute ${instrumentMutes.td3 || selectedOutputs.td3 === null ? 'engaged' : ''}`} aria-pressed={instrumentMutes.td3 || selectedOutputs.td3 === null} disabled={selectedOutputs.td3 === null} title={selectedOutputs.td3 === null ? 'Select a MIDI output to enable this instrument.' : instrumentMutes.td3 ? 'Unmute TD-3' : 'Mute TD-3'} onClick={() => toggleInstrumentMute('td3')}>{instrumentMutes.td3 || selectedOutputs.td3 === null ? 'MUTED' : 'MUTE'}</button>
+            <div><h1>TD-3</h1></div>
+          </div>
+          {selectedOutputs.td3 !== null && <SequenceToolbar label="TD-3" view={td3View} page={td3Page} onView={setTd3View} onPage={(nextPage) => { setTd3Page(nextPage); setSelectedAcidStep((current) => ({ ...current, index: null })) }} />}
+          {selectedOutputs.td3 !== null && <ModuleSetup target="td3" outputs={outputs} selected={selectedOutputs.td3} tracks={td3Tracks} onSelect={selectModuleOutput} onChannel={(trackId, channel) => updateTd3Track(trackId as Td3TrackId, (track) => ({ ...track, channel }))} />}
+        </div>
+        {selectedOutputs.td3 === null ? <ModuleConnectionSetup target="td3" outputs={outputs} selected={selectedOutputs.td3} tracks={td3Tracks} onSelect={selectModuleOutput} onChannel={(trackId, channel) => updateTd3Track(trackId as Td3TrackId, (track) => ({ ...track, channel }))} /> : <div className="module-body">
+          <div className="lanes">
+            {td3Tracks.map((track) => <Td3Lane key={track.id} track={track} view={td3View} page={td3Page} selected={selectedAcidStep.trackId === track.id ? selectedAcidStep.index : null} currentStep={currentSteps[track.id] ?? null} onSelect={(index) => { setSelectedAcidStep({ trackId: track.id, index }); setTd3Page(Math.floor(index / pageSize)) }} onChange={(change) => updateTd3Track(track.id, change)} />)}
+          </div>
+          {selectedAcidIndex !== null && selectedAcid && <AcidStepEditor track={selectedAcidTrack} index={selectedAcidIndex} step={selectedAcid} onClose={() => setSelectedAcidStep((current) => ({ ...current, index: null }))} onChange={(change) => updateTd3Track(selectedAcidTrack.id, (track) => ({ ...track, steps: track.steps.map((step, index) => index === selectedAcidIndex ? change(step) : step) }))} />}
+        </div>}
+      </RackFrame>
       </div>
     </section>
   </main>
@@ -535,12 +599,12 @@ function SeedLab({ settings, onSettings, onSeed, lastSeed, busy }: { settings: S
         {(['auto', 'locked', 'poly'] as CycleMode[]).map((mode) => <button key={mode} className={settings.cycleMode === mode ? 'selected' : ''} aria-pressed={settings.cycleMode === mode} title={mode === 'auto' ? 'One style-aware Digitone cycle drifts against the four-bar frame' : mode === 'locked' ? 'Every generated lane follows the full four-bar frame' : 'Two Digitone cycles drift against the four-bar frame'} onClick={() => update('cycleMode', mode)}>{mode === 'locked' ? 'LOCKED' : mode.toUpperCase()}</button>)}
       </div>
       <strong><small>LAST</small>{lastSeed}</strong>
-      <GeneratorApplyControls label="Phrase" target={target} digitoneTracks={initialDigitoneTracks} digitaktTracks={initialDigitaktTracks} onTarget={setTarget} onApply={() => onSeed(target)} busy={busy} />
+      <GeneratorApplyControls label="Phrase" target={target} digitoneTracks={initialDigitoneTracks} digitaktTracks={initialDigitaktTracks} td3Tracks={initialTd3Tracks} onTarget={setTarget} onApply={() => onSeed(target)} busy={busy} />
     </div>
   </RackFrame>
 }
 
-function EuclideanGenerator({ digitoneTracks, digitaktTracks, onGenerate }: { digitoneTracks: DigitoneTrack[]; digitaktTracks: DigitaktTrack[]; onGenerate: (settings: EuclideanSettings) => void }): React.JSX.Element {
+function EuclideanGenerator({ digitoneTracks, digitaktTracks, td3Tracks, onGenerate }: { digitoneTracks: DigitoneTrack[]; digitaktTracks: DigitaktTrack[]; td3Tracks: Td3Track[]; onGenerate: (settings: EuclideanSettings) => void }): React.JSX.Element {
   const [settings, setSettings] = useState<EuclideanSettings>({ trackId: 'dk-closed-hat', hits: 5, steps: 16, rotation: 0 })
   const pattern = euclideanPattern(settings.hits, settings.steps, settings.rotation)
   const updateNumber = (key: 'hits' | 'steps' | 'rotation', value: number): void => {
@@ -574,13 +638,13 @@ function EuclideanGenerator({ digitoneTracks, digitaktTracks, onGenerate }: { di
         {euclideanPresets.map((preset) => <button key={preset.id} className={settings.hits === preset.hits && settings.steps === preset.steps && settings.rotation === preset.rotation ? 'selected' : ''} aria-label={`${preset.label}: ${preset.context}, E(${preset.hits},${preset.steps})`} onClick={() => choosePreset(preset)}><strong>{preset.label}</strong></button>)}
       </div>
       <div className="euclidean-controls">
-        <GeneratorApplyControls label="Euclidean" target={settings.trackId} digitoneTracks={digitoneTracks} digitaktTracks={digitaktTracks} onTarget={(trackId) => setSettings((current) => ({ ...current, trackId }))} onApply={generate} />
+        <GeneratorApplyControls label="Euclidean" target={settings.trackId} digitoneTracks={digitoneTracks} digitaktTracks={digitaktTracks} td3Tracks={td3Tracks} onTarget={(trackId) => setSettings((current) => ({ ...current, trackId }))} onApply={generate} />
       </div>
     </div>
   </RackFrame>
 }
 
-function ArpeggioGenerator({ digitoneTracks, digitaktTracks, rootSync, onGenerate }: { digitoneTracks: DigitoneTrack[]; digitaktTracks: DigitaktTrack[]; rootSync: { root: number; revision: number }; onGenerate: (settings: ArpeggioSettings) => void }): React.JSX.Element {
+function ArpeggioGenerator({ digitoneTracks, digitaktTracks, td3Tracks, rootSync, onGenerate }: { digitoneTracks: DigitoneTrack[]; digitaktTracks: DigitaktTrack[]; td3Tracks: Td3Track[]; rootSync: { root: number; revision: number }; onGenerate: (settings: ArpeggioSettings) => void }): React.JSX.Element {
   const [root, setRoot] = useState(rootSync.root)
   const [scale, setScale] = useState<ArpeggioScale>('minor')
   const [settings, setSettings] = useState<ArpeggioSettings>({
@@ -632,7 +696,7 @@ function ArpeggioGenerator({ digitoneTracks, digitaktTracks, rootSync, onGenerat
       <label>TRIGGERS<select aria-label="Arpeggio trigger placement" value={settings.triggers} onChange={(event) => setSettings((current) => ({ ...current, triggers: event.target.value as ArpeggioTriggers }))}>
         <option value="keep">KEEP LANE</option><option value="every-2">EVERY 2</option><option value="every-1">EVERY STEP</option>
       </select></label>
-      <GeneratorApplyControls label="Arpeggio" target={settings.trackId} digitoneTracks={digitoneTracks} digitaktTracks={digitaktTracks} onTarget={(trackId) => setSettings((current) => ({ ...current, trackId }))} onApply={() => onGenerate(settings)} disabled={settings.pitchClasses.length === 0} />
+      <GeneratorApplyControls label="Arpeggio" target={settings.trackId} digitoneTracks={digitoneTracks} digitaktTracks={digitaktTracks} td3Tracks={td3Tracks} onTarget={(trackId) => setSettings((current) => ({ ...current, trackId }))} onApply={() => onGenerate(settings)} disabled={settings.pitchClasses.length === 0} />
     </div>
   </RackFrame>
 }
@@ -659,14 +723,16 @@ function MiniKeyboard({ selected, onToggle }: { selected: number[]; onToggle: (p
   </div>
 }
 
-function GeneratorApplyControls({ label, target, digitoneTracks, digitaktTracks, onTarget, onApply, busy = false, disabled = false }: { label: string; target: GeneratorTarget; digitoneTracks: Array<{ id: DigitoneTrackId; label: string }>; digitaktTracks: Array<{ id: DigitaktTrackId; label: string }>; onTarget: (target: GeneratorTarget) => void; onApply: () => void; busy?: boolean; disabled?: boolean }): React.JSX.Element {
+function GeneratorApplyControls({ label, target, digitoneTracks, digitaktTracks, td3Tracks, onTarget, onApply, busy = false, disabled = false }: { label: string; target: GeneratorTarget; digitoneTracks: Array<{ id: DigitoneTrackId; label: string }>; digitaktTracks: Array<{ id: DigitaktTrackId; label: string }>; td3Tracks: Array<{ id: Td3TrackId; label: string }>; onTarget: (target: GeneratorTarget) => void; onApply: () => void; busy?: boolean; disabled?: boolean }): React.JSX.Element {
   return <div className="generator-apply-group">
     <label>APPLY TO<select aria-label={`${label} target lane`} value={target} onChange={(event) => onTarget(event.target.value as GeneratorTarget)}>
       <option value="all">ALL</option>
       <option value="all-digitone">ALL DIGITONE</option>
       <option value="all-digitakt">ALL DIGITAKT</option>
+      <option value="all-td3">ALL TD-3</option>
       <optgroup label="DIGITONE">{digitoneTracks.map((track) => <option value={track.id} key={track.id}>{track.label}</option>)}</optgroup>
       <optgroup label="DIGITAKT">{digitaktTracks.map((track) => <option value={track.id} key={track.id}>{track.label}</option>)}</optgroup>
+      <optgroup label="TD-3">{td3Tracks.map((track) => <option value={track.id} key={track.id}>{track.label}</option>)}</optgroup>
     </select></label>
     <button className={`generator-apply-action ${busy ? 'working' : ''}`} disabled={disabled} aria-busy={busy} aria-label={`APPLY ${label.toUpperCase()}`} onClick={onApply}><strong>{busy ? 'APPLYING…' : 'APPLY'}</strong></button>
   </div>
@@ -771,7 +837,7 @@ function ModuleConnectionSetup({ target, outputs, selected, tracks, onSelect, on
 
 function ConnectionFields({ target, outputs, selected, tracks, onSelect, onChannel }: { target: RackTarget; outputs: string[]; selected: number | null; tracks: Array<{ id: TrackId; label: string; channel: number }>; onSelect: (target: RackTarget, port: number | null) => Promise<void>; onChannel: (trackId: TrackId, channel: number) => void }): React.JSX.Element {
   return <div className="module-routing-fields">
-    <label className="module-output">MIDI OUT<select value={selected ?? ''} onChange={(event) => void onSelect(target, event.target.value === '' ? null : Number(event.target.value))}><option value="">Select {target === 'digitone' ? 'Digitone' : 'Digitakt'}…</option>{outputs.map((name, index) => <option value={index} key={`${name}-${index}`}>{name}</option>)}</select><small>{selected === null ? 'DISCONNECTED' : 'ARMED'}</small></label>
+    <label className="module-output">MIDI OUT<select value={selected ?? ''} onChange={(event) => void onSelect(target, event.target.value === '' ? null : Number(event.target.value))}><option value="">Select {target === 'digitone' ? 'Digitone' : target === 'digitakt' ? 'Digitakt' : 'TD-3'}…</option>{outputs.map((name, index) => <option value={index} key={`${name}-${index}`}>{name}</option>)}</select><small>{selected === null ? 'DISCONNECTED' : 'ARMED'}</small></label>
     <div className="channel-bank" aria-label={`${target} MIDI channels`}>{tracks.map((track) => <label key={track.id} title={track.label}><span>{track.label.replace(/^T(\d+) \/.*/, 'T$1')}</span><select aria-label={`${track.label} MIDI channel`} value={track.channel} onChange={(event) => onChannel(track.id, Number(event.target.value))}>{channelOptions()}</select></label>)}</div>
   </div>
 }
@@ -831,6 +897,27 @@ function DigitoneLane({ track, view, page, selected, currentStep, lfos, lfoLevel
   </section>
 }
 
+function Td3Lane({ track, view, page, selected, currentStep, onSelect, onChange }: { track: Td3Track; view: SequenceView; page: number; selected: number | null; currentStep: number | null; onSelect: (index: number) => void; onChange: (change: (track: Td3Track) => Td3Track) => void }): React.JSX.Element {
+  const pageStart = page * pageSize
+  const displayedSteps = view === 'detail' ? track.steps.slice(pageStart, pageStart + pageSize) : track.steps
+  const formatOctave = (value: number): string => value > 0 ? `+${value}` : String(value)
+  return <section className={`lane acid-lane ${track.color}`}>
+    <LaneMute label={track.label} muted={track.muted} onMute={() => onChange((value) => ({ ...value, muted: !value.muted }))} />
+    <div className="lane-label">
+      <strong className="track-title" title={track.label}>{track.label}</strong>
+      <div className="lane-performance"><label>LEN<select aria-label={`${track.label} length`} value={track.length} onChange={(event) => onChange((value) => ({ ...value, length: Number(event.target.value) }))}>{trackLengthOptions(track.length).map((length) => <option key={length} value={length}>{length}</option>)}</select></label><label>GROOVE<select value={track.groove} onChange={(event) => onChange((value) => ({ ...value, groove: event.target.value as Groove }))}>{grooveOptions()}</select></label></div>
+    </div>
+    {view === 'detail' ? <div className="step-grid acid-grid">
+      {displayedSteps.map((step, offset) => { const index = pageStart + offset; return <button type="button" aria-label={`Select ${track.label} step ${index + 1}`} className={`step ${currentStep === index ? 'active' : ''} ${step.notes.length === 0 ? 'empty' : ''} ${step.accent ? 'acid-accent' : ''} ${step.slide ? 'acid-slide' : ''} ${index >= track.length ? 'outside-cycle' : ''} ${selected === index ? 'selected' : ''}`} key={index} onClick={() => onSelect(index)}><span>{String(index + 1).padStart(2, '0')}</span><strong>{step.notes.length ? noteName(clampNote(step.notes[0] + track.octave * 12)) : '—'}</strong><small>{step.notes.length ? `${step.accent ? 'A' : '·'} ${step.slide ? 'S' : '·'}` : 'REST'}</small></button> })}
+    </div> : <SequenceMap track={track} selected={selected} currentStep={currentStep} onSelect={onSelect} />}
+    <div className="acid-controls">
+      <span>303 ARTICULATION</span><strong>ACCENT · SLIDE · OCTAVE</strong>
+      <div className="octave-buttons" aria-label={`${track.shortLabel} base octave`}><button aria-label={`${track.shortLabel} octave down`} disabled={track.octave === -2} onClick={() => onChange((value) => ({ ...value, octave: value.octave - 1 }))}>−</button><strong>{formatOctave(track.octave)}</strong><button aria-label={`${track.shortLabel} octave up`} disabled={track.octave === 3} onClick={() => onChange((value) => ({ ...value, octave: value.octave + 1 }))}>+</button></div>
+      <small>Accent = velocity 127 · Slide = legato overlap</small>
+    </div>
+  </section>
+}
+
 function DigitaktLane({ track, view, page, selected, currentStep, lfos, lfoLevels, onSelect, onChange, onMacro, onMacroRoute, onMacroDepth }: { track: DigitaktTrack; view: SequenceView; page: number; selected: number | null; currentStep: number | null; lfos: LfoConfig[]; lfoLevels: Record<LfoId, number>; onSelect: (index: number) => void; onChange: (change: (track: DigitaktTrack) => DigitaktTrack) => void; onMacro: (macro: 'tone' | 'space', value: number) => void; onMacroRoute: (macro: 'tone' | 'space', source: MacroSource) => void; onMacroDepth: (macro: 'tone' | 'space', depth: number) => void }): React.JSX.Element {
   const toggleStep = (index: number): void => onChange((current) => ({
     ...current,
@@ -849,7 +936,7 @@ function DigitaktLane({ track, view, page, selected, currentStep, lfos, lfoLevel
   </section>
 }
 
-function SequenceMap({ track, selected, currentStep, onSelect }: { track: DigitoneTrack | DigitaktTrack; selected: number | null; currentStep: number | null; onSelect: (index: number) => void }): React.JSX.Element {
+function SequenceMap({ track, selected, currentStep, onSelect }: { track: DigitoneTrack | DigitaktTrack | Td3Track; selected: number | null; currentStep: number | null; onSelect: (index: number) => void }): React.JSX.Element {
   return <div className="sequence-map">
     {Array.from({ length: pageCount }, (_, bar) => <div className="map-bar" key={bar}>
       <div className="map-bar-label"><strong>BAR {bar + 1}</strong><span>{bar * pageSize + 1}–{(bar + 1) * pageSize}</span></div>
@@ -930,6 +1017,26 @@ function StepEditor({ track, index, step, onChange, onClose }: { track: Digitone
   </section>
 }
 
+function AcidStepEditor({ track, index, step, onChange, onClose }: { track: Td3Track; index: number; step: Step; onChange: (change: (step: Step) => Step) => void; onClose: () => void }): React.JSX.Element {
+  const [noteText, setNoteText] = useState(formatNotes(step.notes.slice(0, 1)))
+  useEffect(() => setNoteText(formatNotes(step.notes.slice(0, 1))), [track.id, index, step.notes])
+  const commitNote = (): void => {
+    const parsed = parseNotes(noteText)
+    if (parsed !== null && parsed.length <= 1) onChange((value) => ({ ...value, notes: parsed }))
+    else setNoteText(formatNotes(step.notes.slice(0, 1)))
+  }
+  const active = step.notes.length > 0
+  return <section className={`step-editor acid-step-editor ${track.color}`}>
+    <button className="editor-close" aria-label={`Close ${track.shortLabel} cell editor`} onClick={onClose}>×</button>
+    <div><span className="section-label">ACID CELL</span><h2>{track.shortLabel} · STEP {String(index + 1).padStart(2, '0')}</h2></div>
+    <label className="notes-field">NOTE<input value={noteText} onChange={(event) => setNoteText(event.target.value)} onBlur={commitNote} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }} placeholder="C2" /><small>Monophonic · one note or blank rest</small></label>
+    <button className={`acid-articulation ${step.accent ? 'engaged' : ''}`} disabled={!active} aria-label="TD-3 accent" aria-pressed={Boolean(step.accent)} onClick={() => onChange((current) => ({ ...current, accent: !current.accent, velocity: !current.accent ? 127 : 92 }))}><span>ACCENT</span><strong>{step.accent ? 'ON' : 'OFF'}</strong></button>
+    <button className={`acid-articulation ${step.slide ? 'engaged' : ''}`} disabled={!active} aria-label="TD-3 slide to next step" aria-pressed={Boolean(step.slide)} onClick={() => onChange((current) => ({ ...current, slide: !current.slide, gate: !current.slide ? 100 : 54 }))}><span>SLIDE →</span><strong>{step.slide ? 'ON' : 'OFF'}</strong></button>
+    <ValueControl label="CHANCE" value={step.probability} min={0} max={100} suffix="%" onChange={(value) => onChange((current) => ({ ...current, probability: value }))} />
+    <button className="rest" onClick={() => onChange((current) => ({ ...current, notes: [], accent: false, slide: false }))}>MAKE REST</button>
+  </section>
+}
+
 function DrumStepEditor({ track, index, step, onChange, onClose }: { track: DigitaktTrack; index: number; step: Step; onChange: (change: (step: Step) => Step) => void; onClose: () => void }): React.JSX.Element {
   const enabled = step.notes.length > 0
   const shortLabel = track.label.replace(/^T\d+ \/ /, '')
@@ -981,7 +1088,7 @@ function noteName(note: number): string { return ['C', 'C♯', 'D', 'D♯', 'E',
 function formatNotes(notes: number[]): string { return notes.map(noteName).join(' ') }
 function clampNote(note: number): number { return Math.max(0, Math.min(127, note)) }
 function targetIncludes(target: GeneratorTarget, trackId: TrackId): boolean {
-  return target === 'all' || target === trackId || (target === 'all-digitone' && trackId.startsWith('dn-')) || (target === 'all-digitakt' && trackId.startsWith('dk-'))
+  return target === 'all' || target === trackId || (target === 'all-digitone' && trackId.startsWith('dn-')) || (target === 'all-digitakt' && trackId.startsWith('dk-')) || (target === 'all-td3' && trackId.startsWith('td3-'))
 }
 function entries<Value>(record: Record<string, Value>): Array<[string, Value]> { return Object.entries(record) }
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error) }

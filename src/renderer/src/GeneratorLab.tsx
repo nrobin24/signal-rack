@@ -37,7 +37,7 @@ export type LabCandidate = {
 type GeneratorLabProps = {
   settings: SeedSettings
   bpm: number
-  outputNames: { digitone: string | null; digitakt: string | null }
+  outputNames: { digitone: string | null; digitakt: string | null; td3: string | null }
   canAudition: boolean
   playingCandidateId: string | null
   onSettings: (settings: SeedSettings) => void
