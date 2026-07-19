@@ -15,7 +15,9 @@ use tauri::{AppHandle, Emitter};
 
 use crate::{
     lfo::{lfo_value, modulated_value},
-    model::{DigitaktSceneId, Groove, LfoId, RackTarget, SceneId, SequencerConfig, TrackConfig, TrackId},
+    model::{
+        DigitaktSceneId, Groove, LfoId, RackTarget, SceneId, SequencerConfig, TrackConfig, TrackId,
+    },
 };
 
 #[derive(Clone)]
@@ -511,10 +513,10 @@ impl Engine {
 
     fn send_track_macros(&mut self, track: &TrackConfig) {
         if track.tone_enabled {
-                self.send_cutoff(track, self.macro_value(track, "tone"));
+            self.send_cutoff(track, self.macro_value(track, "tone"));
         }
         if track.space_enabled {
-                self.send_delay(track, self.macro_value(track, "space"));
+            self.send_delay(track, self.macro_value(track, "space"));
         }
     }
 
@@ -744,7 +746,11 @@ fn note_velocity(target: RackTarget, step: &crate::model::Step) -> u8 {
     }
 }
 
-fn note_release(target: RackTarget, step: &crate::model::Step, step_duration: Duration) -> Duration {
+fn note_release(
+    target: RackTarget,
+    step: &crate::model::Step,
+    step_duration: Duration,
+) -> Duration {
     if target == RackTarget::Td3 && step.slide {
         // The standard TD-3 exposes no slide CC. A short note overlap makes the following note
         // legato, which is how external sequencers drive its 303-style glide.
@@ -756,7 +762,12 @@ fn note_release(target: RackTarget, step: &crate::model::Step, step_duration: Du
     }
 }
 
-fn modulated_notes(notes: &[u8], track: &TrackConfig, lfos: &[crate::model::LfoConfig], pulse: u64) -> Vec<u8> {
+fn modulated_notes(
+    notes: &[u8],
+    track: &TrackConfig,
+    lfos: &[crate::model::LfoConfig],
+    pulse: u64,
+) -> Vec<u8> {
     if track.target != RackTarget::Digitone {
         return notes.to_vec();
     }
@@ -882,8 +893,14 @@ mod tests {
 
         assert_eq!(note_velocity(RackTarget::Td3, &step), 127);
         assert_eq!(note_velocity(RackTarget::Digitone, &step), 91);
-        assert_eq!(note_release(RackTarget::Td3, &step, duration), Duration::from_millis(133));
-        assert_eq!(note_release(RackTarget::Digitone, &step, duration), Duration::from_micros(67_500));
+        assert_eq!(
+            note_release(RackTarget::Td3, &step, duration),
+            Duration::from_millis(133)
+        );
+        assert_eq!(
+            note_release(RackTarget::Digitone, &step, duration),
+            Duration::from_micros(67_500)
+        );
     }
 
     #[test]

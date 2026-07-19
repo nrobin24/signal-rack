@@ -10,6 +10,21 @@ type EngineStatus = {
   outputNames: Record<RackTarget, string | null>
 }
 
+export type AudioDevices = {
+  inputs: string[]
+  outputs: string[]
+  defaultInput: string | null
+  defaultOutput: string | null
+}
+
+export type AudioMonitorStatus = {
+  active: boolean
+  inputName: string | null
+  outputName: string | null
+  sampleRate: number | null
+  level: number
+}
+
 type MockBridge = {
   invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>
   listen<T>(event: string, callback: (payload: T) => void): Promise<UnlistenFn>
@@ -56,6 +71,11 @@ export const backend = {
   listOutputs: (): Promise<string[]> => call('list_outputs'),
   getStatus: (): Promise<EngineStatus> => call('get_status'),
   selectOutput: (target: RackTarget, port: number | null): Promise<void> => call('select_output', { target, port }),
+  listAudioDevices: (): Promise<AudioDevices> => call('list_audio_devices'),
+  getAudioMonitorStatus: (): Promise<AudioMonitorStatus> => call('get_audio_monitor_status'),
+  startAudioMonitor: (inputIndex: number, outputIndex: number, level: number): Promise<void> => call('start_audio_monitor', { inputIndex, outputIndex, level }),
+  setAudioMonitorLevel: (level: number): Promise<void> => call('set_audio_monitor_level', { level }),
+  stopAudioMonitor: (): Promise<void> => call('stop_audio_monitor'),
   configure: (config: SequencerConfig): Promise<void> => call('configure', { config }),
   setMacros: (trackId: TrackId, tone: number, space: number): Promise<void> => call('set_macros', { trackId, tone, space }),
   start: (): Promise<void> => call('start_transport'),

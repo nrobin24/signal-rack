@@ -16,11 +16,13 @@ import {
   type PhraseLeader,
   type PhraseShape,
   type RhythmConcept,
+  type GeneratedSeed,
   type SeedSettings
 } from './seed'
 import { lfoPeriodLabels } from './modulation'
 import { euclideanPattern, euclideanPresets, replaceWithEuclideanSteps, type EuclideanSettings } from './euclidean'
 import { applyArpeggio as applyArpeggioToSteps, pitchClassLabels, type ArpeggioDirection, type ArpeggioSettings, type ArpeggioTriggers } from './arpeggio'
+import { mutateSteps, mutationDestination, phraseMutationLabels, tonalContext, type PhraseMutation, type TonalContext } from './mutation'
 
 type Color = 'orange' | 'cyan' | 'violet' | 'lime' | 'rose' | 'blue' | 'teal' | 'amber' | 'pink' | 'sand'
 type DigitoneTrack = TrackConfig & {
@@ -61,10 +63,17 @@ type SceneSequenceId = 'intro' | 'groove' | 'build' | 'drop' | 'break' | 'rise' 
 type UnifiedSceneId = 'full' | SceneSequenceId
 type SceneBarLength = 4 | 8 | 16 | 32 | 64
 type ArpeggioScale = 'minor' | 'dorian' | 'phrygian' | 'major' | 'mixolydian' | 'chromatic'
+type PhraseBase = { digitone: DigitoneTrack[]; td3: Td3Track[]; context: TonalContext }
 
 const stepCount = 64
 const pageSize = 16
 const pageCount = stepCount / pageSize
+const initialSeedSettings: SeedSettings = { root: 1, harmony: 'house', bassRole: 'answer', rhythm: 'house', energy: 'medium', shape: 'aa-turn', leader: 'bass', cycleMode: 'auto' }
+let startupPhraseRequest: Promise<GeneratedSeed> | null = null
+const generateStartupPhrase = (): Promise<GeneratedSeed> => {
+  startupPhraseRequest ??= backend.generateSeed(initialSeedSettings, 0)
+  return startupPhraseRequest
+}
 const sequenceLengths = [8, 10, 12, 14, 16, 24, 32, 48, 64]
 const euclideanFallbackNotes: Record<TrackId, number[]> = {
   'dn-bass': [37],
@@ -167,12 +176,25 @@ const digitaktImpact: Record<DigitaktSceneId, SceneImpactGroup> = {
   drop: { label: 'DIGITAKT', parts: [{ label: 'KICK', level: .2 }, { label: 'SNARE', level: 0 }, { label: 'HATS', level: 0 }, { label: 'RIM', level: 0 }, { label: 'CLAP', level: 0 }, { label: 'TEXTURE', level: .35 }] }
 }
 const sceneImpact = (id: UnifiedSceneId): SceneImpactGroup[] => [digitoneImpact[unifiedSceneInfo[id].digitone], digitaktImpact[unifiedSceneInfo[id].digitakt]]
+const tonalTrackIds: TrackId[] = ['dn-bass', 'dn-vamp', 'dn-puncture', 'td3-acid']
+
+const cloneSteps = (steps: Step[]): Step[] => steps.map((step) => ({ ...step, notes: [...step.notes] }))
+const cloneDigitoneTracks = (tracks: DigitoneTrack[]): DigitoneTrack[] => tracks.map((track) => ({ ...track, steps: cloneSteps(track.steps) }))
+const cloneTd3Tracks = (tracks: Td3Track[]): Td3Track[] => tracks.map((track) => ({ ...track, steps: cloneSteps(track.steps) }))
 
 export default function App(): React.JSX.Element {
   const [mode, setMode] = useState<AppMode>('rack')
   const [bpm, setBpm] = useState(132)
   const [outputs, setOutputs] = useState<string[]>([])
   const [selectedOutputs, setSelectedOutputs] = useState<OutputSelection>({ digitone: null, digitakt: null, td3: null })
+  const [audioDevices, setAudioDevices] = useState({ inputs: [] as string[], outputs: [] as string[] })
+  const [audioInput, setAudioInput] = useState<number | null>(null)
+  const [audioOutput, setAudioOutput] = useState<number | null>(null)
+  const [audioLevel, setAudioLevel] = useState(1.5)
+  const [audioMonitoring, setAudioMonitoring] = useState(false)
+  const [audioSampleRate, setAudioSampleRate] = useState<number | null>(null)
+  const [audioBusy, setAudioBusy] = useState(false)
+  const [audioError, setAudioError] = useState<string | null>(null)
   const [playing, setPlaying] = useState(false)
   const [currentSteps, setCurrentSteps] = useState<Partial<Record<TrackId, number>>>({})
   const [lfoLevels, setLfoLevels] = useState<Record<LfoId, number>>(zeroLfoLevels)
@@ -196,9 +218,12 @@ export default function App(): React.JSX.Element {
   const [digitaktPage, setDigitaktPage] = useState(0)
   const [td3View, setTd3View] = useState<SequenceView>('detail')
   const [td3Page, setTd3Page] = useState(0)
-  const [seedSettings, setSeedSettings] = useState<SeedSettings>({ root: 1, harmony: 'house', bassRole: 'answer', rhythm: 'house', energy: 'medium', shape: 'aa-turn', leader: 'bass', cycleMode: 'auto' })
-  const [lastSeed, setLastSeed] = useState('No generated phrase yet')
-  const [seedBusy, setSeedBusy] = useState(false)
+  const [seedSettings, setSeedSettings] = useState<SeedSettings>(initialSeedSettings)
+  const [lastSeed, setLastSeed] = useState('Loading Warm house · House interlock…')
+  const [seedBusy, setSeedBusy] = useState(true)
+  const [phraseBase, setPhraseBase] = useState<PhraseBase | null>(null)
+  const [activeMutation, setActiveMutation] = useState<PhraseMutation | null>(null)
+  const [mutatedTrackIds, setMutatedTrackIds] = useState<TrackId[]>([])
   const [arpeggioRootSync, setArpeggioRootSync] = useState({ root: seedSettings.root, revision: 0 })
   const [playingCandidateId, setPlayingCandidateId] = useState<string | null>(null)
   const [labHasUnexportedSession, setLabHasUnexportedSession] = useState(false)
@@ -230,6 +255,43 @@ export default function App(): React.JSX.Element {
       setPlaying(status.playing)
     }).catch(console.error)
     return () => { disposed = true; if (labStopTimer.current !== null) window.clearTimeout(labStopTimer.current); unsubscribeStep?.(); unsubscribeLfo?.(); unsubscribeClock?.(); unsubscribeStop?.() }
+  }, [])
+
+  useEffect(() => {
+    let disposed = false
+    void Promise.all([backend.listAudioDevices(), backend.getAudioMonitorStatus()]).then(([devices, status]) => {
+      if (disposed) return
+      setAudioDevices({ inputs: devices.inputs, outputs: devices.outputs })
+      const inputName = status.inputName ?? devices.defaultInput
+      const outputName = status.outputName ?? devices.defaultOutput
+      const inputIndex = inputName === null ? -1 : devices.inputs.indexOf(inputName)
+      const outputIndex = outputName === null ? -1 : devices.outputs.indexOf(outputName)
+      setAudioInput(inputIndex >= 0 ? inputIndex : devices.inputs.length ? 0 : null)
+      setAudioOutput(outputIndex >= 0 ? outputIndex : devices.outputs.length ? 0 : null)
+      setAudioLevel(status.level)
+      setAudioMonitoring(status.active)
+      setAudioSampleRate(status.sampleRate)
+    }).catch((error: unknown) => {
+      if (!disposed) setAudioError(errorMessage(error))
+    })
+    return () => { disposed = true }
+  }, [])
+
+  useEffect(() => {
+    let disposed = false
+    void generateStartupPhrase().then(async (generated) => {
+      if (disposed || latestSeedRequest.current !== 0) return
+      const applied = await applyGeneratedSeed(generated)
+      if (disposed || latestSeedRequest.current !== 0) return
+      setPhraseBase({ digitone: cloneDigitoneTracks(applied.nextDigitone), td3: cloneTd3Tracks(applied.nextTd3), context: tonalContext(initialSeedSettings.root, initialSeedSettings.harmony) })
+      setLastSeed(generated.summary)
+    }).catch((error: unknown) => {
+      console.error(error)
+      if (!disposed && latestSeedRequest.current === 0) setLastSeed(`GENERATOR ERROR · ${errorMessage(error)}`)
+    }).finally(() => {
+      if (!disposed && latestSeedRequest.current === 0) setSeedBusy(false)
+    })
+    return () => { disposed = true }
   }, [])
 
   function config(nextDigitone = digitoneTracks, nextDigitakt = digitaktTracks, nextScene = scene, nextBpm = bpm, nextLfos = lfos, nextInstrumentMutes = instrumentMutes, nextDigitaktScene = digitaktScene, nextTd3 = td3Tracks): SequencerConfig {
@@ -265,6 +327,55 @@ export default function App(): React.JSX.Element {
     setOutputs(nextOutputs)
     setSelectedOutputs(nextSelection)
     setPlaying(status.playing)
+  }
+
+  async function refreshAudioDevices(): Promise<void> {
+    setAudioBusy(true)
+    setAudioError(null)
+    try {
+      const devices = await backend.listAudioDevices()
+      const priorInput = audioInput === null ? null : audioDevices.inputs[audioInput]
+      const priorOutput = audioOutput === null ? null : audioDevices.outputs[audioOutput]
+      const nextInput = priorInput === null ? -1 : devices.inputs.indexOf(priorInput)
+      const nextOutput = priorOutput === null ? -1 : devices.outputs.indexOf(priorOutput)
+      setAudioDevices({ inputs: devices.inputs, outputs: devices.outputs })
+      setAudioInput(nextInput >= 0 ? nextInput : devices.inputs.length ? 0 : null)
+      setAudioOutput(nextOutput >= 0 ? nextOutput : devices.outputs.length ? 0 : null)
+    } catch (error: unknown) {
+      setAudioError(errorMessage(error))
+    } finally {
+      setAudioBusy(false)
+    }
+  }
+
+  async function toggleAudioMonitor(): Promise<void> {
+    if (audioBusy) return
+    setAudioBusy(true)
+    setAudioError(null)
+    try {
+      if (audioMonitoring) {
+        await backend.stopAudioMonitor()
+        setAudioMonitoring(false)
+        setAudioSampleRate(null)
+      } else if (audioInput !== null && audioOutput !== null) {
+        await backend.startAudioMonitor(audioInput, audioOutput, audioLevel)
+        const status = await backend.getAudioMonitorStatus()
+        setAudioMonitoring(true)
+        setAudioSampleRate(status.sampleRate)
+      }
+    } catch (error: unknown) {
+      setAudioMonitoring(false)
+      setAudioSampleRate(null)
+      setAudioError(errorMessage(error))
+    } finally {
+      setAudioBusy(false)
+    }
+  }
+
+  function changeAudioLevel(percent: number): void {
+    const level = Math.max(0, Math.min(4, percent / 100))
+    setAudioLevel(level)
+    if (audioMonitoring) void backend.setAudioMonitorLevel(level).catch((error: unknown) => setAudioError(errorMessage(error)))
   }
 
   async function startTransport(): Promise<void> {
@@ -381,7 +492,10 @@ export default function App(): React.JSX.Element {
       const generated = await backend.generateSeed(seedSettings, variation)
       if (request !== latestSeedRequest.current) return
 
-      await applyGeneratedSeed(generated, target)
+      const applied = await applyGeneratedSeed(generated, target)
+      setPhraseBase({ digitone: cloneDigitoneTracks(applied.nextDigitone), td3: cloneTd3Tracks(applied.nextTd3), context: tonalContext(seedSettings.root, seedSettings.harmony) })
+      setActiveMutation(null)
+      setMutatedTrackIds([])
       setArpeggioRootSync((current) => ({ root: seedSettings.root, revision: current.revision + 1 }))
       setLastSeed(generated.summary)
     } catch (error: unknown) {
@@ -425,6 +539,59 @@ export default function App(): React.JSX.Element {
     setDigitaktTracks(nextDigitakt)
     setTd3Tracks(nextTd3)
     void backend.configure(config(nextDigitone, nextDigitakt, scene, bpm, lfos, instrumentMutes, digitaktScene, nextTd3))
+  }
+
+  function applyPhraseMutation(mutation: PhraseMutation, target: GeneratorTarget): void {
+    if (!phraseBase) return
+    const latchedMutation = activeMutation ?? mutation
+    if (activeMutation !== null && activeMutation !== mutation) return
+    const affectedIds = tonalTrackIds.filter((trackId) => targetIncludes(target, trackId))
+    if (!affectedIds.length) return
+
+    const nextDigitone = digitoneTracks.map((track) => {
+      if (!affectedIds.includes(track.id)) return track
+      const baseTrack = phraseBase.digitone.find((candidate) => candidate.id === track.id)
+      return baseTrack ? { ...track, length: baseTrack.length, groove: baseTrack.groove, steps: mutateSteps(baseTrack.steps, phraseBase.context, latchedMutation) } : track
+    })
+    const nextTd3 = td3Tracks.map((track) => {
+      if (!affectedIds.includes(track.id)) return track
+      const baseTrack = phraseBase.td3.find((candidate) => candidate.id === track.id)
+      return baseTrack ? { ...track, length: baseTrack.length, groove: baseTrack.groove, steps: mutateSteps(baseTrack.steps, phraseBase.context, latchedMutation) } : track
+    })
+    setDigitoneTracks(nextDigitone)
+    setTd3Tracks(nextTd3)
+    setActiveMutation(latchedMutation)
+    setMutatedTrackIds((current) => [...new Set([...current, ...affectedIds])])
+    void backend.configure(config(nextDigitone, digitaktTracks, scene, bpm, lfos, instrumentMutes, digitaktScene, nextTd3))
+  }
+
+  function makeCurrentPhraseBase(): void {
+    if (!phraseBase || !activeMutation) return
+    const context = mutationDestination(phraseBase.context, activeMutation)
+    setPhraseBase({ digitone: cloneDigitoneTracks(digitoneTracks), td3: cloneTd3Tracks(td3Tracks), context })
+    setSeedSettings((current) => ({ ...current, root: context.root }))
+    setArpeggioRootSync((current) => ({ root: context.root, revision: current.revision + 1 }))
+    setActiveMutation(null)
+    setMutatedTrackIds([])
+  }
+
+  function returnMutatedLanesToBase(): void {
+    if (!phraseBase || !mutatedTrackIds.length) return
+    const nextDigitone = digitoneTracks.map((track) => {
+      if (!mutatedTrackIds.includes(track.id)) return track
+      const baseTrack = phraseBase.digitone.find((candidate) => candidate.id === track.id)
+      return baseTrack ? { ...track, length: baseTrack.length, groove: baseTrack.groove, steps: cloneSteps(baseTrack.steps) } : track
+    })
+    const nextTd3 = td3Tracks.map((track) => {
+      if (!mutatedTrackIds.includes(track.id)) return track
+      const baseTrack = phraseBase.td3.find((candidate) => candidate.id === track.id)
+      return baseTrack ? { ...track, length: baseTrack.length, groove: baseTrack.groove, steps: cloneSteps(baseTrack.steps) } : track
+    })
+    setDigitoneTracks(nextDigitone)
+    setTd3Tracks(nextTd3)
+    setActiveMutation(null)
+    setMutatedTrackIds([])
+    void backend.configure(config(nextDigitone, digitaktTracks, scene, bpm, lfos, instrumentMutes, digitaktScene, nextTd3))
   }
 
   async function applyGeneratedSeed(generated: Awaited<ReturnType<typeof backend.generateSeed>>, target: GeneratorTarget = 'all'): Promise<{ nextDigitone: DigitoneTrack[]; nextDigitakt: DigitaktTrack[]; nextTd3: Td3Track[] }> {
@@ -502,6 +669,15 @@ export default function App(): React.JSX.Element {
         <button className="play" onClick={startTransport} disabled={mode === 'generator-lab' || armedCount === 0 || playing}>▶ PLAY</button>
         <button className="stop" onClick={stopTransport} disabled={!playing}>■ STOP</button>
       </div>
+      <section className={`audio-monitor ${audioMonitoring ? 'active' : ''}`} aria-label="Audio monitor">
+        <span className="audio-monitor-title"><i /> AUDIO</span>
+        <label>INPUT<select aria-label="Audio input" value={audioInput ?? ''} disabled={audioMonitoring || audioBusy} onChange={(event) => setAudioInput(event.target.value === '' ? null : Number(event.target.value))}><option value="">No input</option>{audioDevices.inputs.map((name, index) => <option value={index} key={`${name}-${index}`}>{name}</option>)}</select></label>
+        <label>OUTPUT<select aria-label="Audio output" value={audioOutput ?? ''} disabled={audioMonitoring || audioBusy} onChange={(event) => setAudioOutput(event.target.value === '' ? null : Number(event.target.value))}><option value="">No output</option>{audioDevices.outputs.map((name, index) => <option value={index} key={`${name}-${index}`}>{name}</option>)}</select></label>
+        <label className="audio-level">LEVEL <span><input aria-label="Audio monitor level" type="range" min="0" max="400" value={Math.round(audioLevel * 100)} onChange={(event) => changeAudioLevel(Number(event.target.value))} /><output>{Math.round(audioLevel * 100)}%</output></span></label>
+        <button className="audio-toggle" aria-pressed={audioMonitoring} disabled={audioBusy || audioInput === null || audioOutput === null} onClick={toggleAudioMonitor}>{audioBusy ? 'WAIT' : audioMonitoring ? 'MONITORING' : 'MONITOR'}</button>
+        <button className="audio-refresh" aria-label="Rescan audio devices" title="Rescan audio input and output devices" disabled={audioMonitoring || audioBusy} onClick={refreshAudioDevices}>↻</button>
+        {(audioError || audioSampleRate !== null) && <small className={audioError ? 'audio-error' : ''} aria-live="polite">{audioError ?? `${Math.round((audioSampleRate ?? 0) / 100) / 10} KHZ`}</small>}
+      </section>
       <div className="rack-status"><span>{armedCount}/3 INSTRUMENTS ARMED</span><button className={mode === 'generator-lab' ? 'mode selected' : 'mode'} onClick={() => mode === 'generator-lab' ? exitGeneratorLab() : enterGeneratorLab()}>{mode === 'generator-lab' ? 'RACK MODE' : 'GENERATOR LAB'}</button><button className="refresh" onClick={refreshOutputs} title="Rescan MIDI output devices">↻ MIDI</button></div>
     </header>
 
@@ -509,7 +685,7 @@ export default function App(): React.JSX.Element {
       <div className="generator-column">
       {mode === 'generator-lab'
         ? <GeneratorLab settings={seedSettings} bpm={bpm} outputNames={{ digitone: selectedOutputs.digitone === null ? null : outputs[selectedOutputs.digitone] ?? null, digitakt: selectedOutputs.digitakt === null ? null : outputs[selectedOutputs.digitakt] ?? null, td3: selectedOutputs.td3 === null ? null : outputs[selectedOutputs.td3] ?? null }} canAudition={armedCount > 0} playingCandidateId={playingCandidateId} onSettings={setSeedSettings} onGenerate={generateLabBatch} onAudition={auditionLabCandidate} onStop={stopTransport} onExport={backend.exportLabSession} onUnexportedChange={setLabHasUnexportedSession} onExit={exitGeneratorLab} />
-        : <SeedLab settings={seedSettings} onSettings={setSeedSettings} onSeed={seedRack} lastSeed={lastSeed} busy={seedBusy} />}
+        : <SeedLab settings={seedSettings} onSettings={setSeedSettings} onSeed={seedRack} lastSeed={lastSeed} busy={seedBusy} hasBase={phraseBase !== null} activeMutation={activeMutation} mutatedTrackIds={mutatedTrackIds} onMutate={applyPhraseMutation} onMakeBase={makeCurrentPhraseBase} onReturnToBase={returnMutatedLanesToBase} />}
 
       {mode === 'rack' && <EuclideanGenerator digitoneTracks={digitoneTracks} digitaktTracks={digitaktTracks} td3Tracks={td3Tracks} onGenerate={applyEuclidean} />}
 
@@ -576,10 +752,13 @@ export default function App(): React.JSX.Element {
   </main>
 }
 
-function SeedLab({ settings, onSettings, onSeed, lastSeed, busy }: { settings: SeedSettings; onSettings: (settings: SeedSettings) => void; onSeed: (target: GeneratorTarget) => void; lastSeed: string; busy: boolean }): React.JSX.Element {
+function SeedLab({ settings, onSettings, onSeed, lastSeed, busy, hasBase, activeMutation, mutatedTrackIds, onMutate, onMakeBase, onReturnToBase }: { settings: SeedSettings; onSettings: (settings: SeedSettings) => void; onSeed: (target: GeneratorTarget) => void; lastSeed: string; busy: boolean; hasBase: boolean; activeMutation: PhraseMutation | null; mutatedTrackIds: TrackId[]; onMutate: (mutation: PhraseMutation, target: GeneratorTarget) => void; onMakeBase: () => void; onReturnToBase: () => void }): React.JSX.Element {
   const [target, setTarget] = useState<GeneratorTarget>('all')
+  const [mutation, setMutation] = useState<PhraseMutation>('fifth-up')
+  const [mutationTarget, setMutationTarget] = useState<GeneratorTarget>('all')
   const update = <Key extends keyof SeedSettings>(key: Key, value: SeedSettings[Key]): void => onSettings({ ...settings, [key]: value })
   const energyIndex = (['low', 'medium', 'high'] as Energy[]).indexOf(settings.energy)
+  const selectedMutation = activeMutation ?? mutation
   return <RackFrame className="seed-module">
     <div className="unit-heading">
       <div><h1>PHRASE GENERATOR</h1></div>
@@ -592,6 +771,20 @@ function SeedLab({ settings, onSettings, onSeed, lastSeed, busy }: { settings: S
       <SeedSelect label="BASS ROLE" value={settings.bassRole} onChange={(value) => update('bassRole', value as BassRole)}>{entries(bassRoleLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</SeedSelect>
       <SeedSelect label="4-BAR SHAPE" value={settings.shape} onChange={(value) => update('shape', value as PhraseShape)}>{entries(phraseShapeLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</SeedSelect>
       <SeedSelect label="PHRASE LEADER" value={settings.leader} onChange={(value) => update('leader', value as PhraseLeader)}>{entries(phraseLeaderLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</SeedSelect>
+    </div>
+    <div className="mutation-controls">
+      <label>MUTATION<select aria-label="Phrase mutation" value={selectedMutation} disabled={activeMutation !== null} onChange={(event) => setMutation(event.target.value as PhraseMutation)}>{entries(phraseMutationLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+      <label>APPLY TO<select aria-label="Mutation target lane" value={mutationTarget} onChange={(event) => setMutationTarget(event.target.value as GeneratorTarget)}>
+        <option value="all">ALL TONAL LANES</option>
+        <option value="all-digitone">ALL DIGITONE</option>
+        <option value="all-td3">ALL TD-3</option>
+        <optgroup label="DIGITONE">{initialDigitoneTracks.map((track) => <option value={track.id} key={track.id}>{track.label}</option>)}</optgroup>
+        <optgroup label="TD-3">{initialTd3Tracks.map((track) => <option value={track.id} key={track.id}>{track.label}</option>)}</optgroup>
+      </select></label>
+      <button className="mutation-apply" disabled={!hasBase} onClick={() => onMutate(selectedMutation, mutationTarget)}>APPLY MUTATION</button>
+      <strong className={activeMutation ? 'active' : ''}><small>{activeMutation ? phraseMutationLabels[activeMutation] : 'BASE'}</small>{activeMutation ? `${mutatedTrackIds.length}/${tonalTrackIds.length} TONAL LANES` : hasBase ? 'READY TO MUTATE' : 'APPLY PHRASE FIRST'}</strong>
+      <button className="mutation-return" disabled={!activeMutation} onClick={onReturnToBase}>RETURN MUTATED LANES</button>
+      <button className="mutation-promote" disabled={!activeMutation} onClick={onMakeBase}>MAKE CURRENT BASE</button>
     </div>
     <div className="seed-result">
       <div className="cycle-control" role="group" aria-label="Cycle mode">

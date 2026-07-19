@@ -1,6 +1,6 @@
 # Signal Rack Development Roadmap
 
-Status: active. The Generator Lab foundation and the current rack-performance tools are implemented; controlled generator repair and later roadmap phases remain planned unless noted otherwise.
+Status: active. The Generator Lab foundation, current rack-performance tools, and a live lane-by-lane tonal mutation foundation are implemented; controlled generator repair and later roadmap phases remain planned unless noted otherwise.
 
 ## Roadmap
 
@@ -29,6 +29,7 @@ The rack currently includes:
 - Per-lane cutoff and delay modulation, plus Digitone octave modulation.
 - Collapsible per-instrument MIDI output and channel setup.
 - A Generator Lab scorecard, native Save As export, and warnings for unexported sessions.
+- Live Fifth Up, Fifth Down, Brighter, Darker, Relative Shift, and Parallel Shift mutations that can move tonal lanes from a stored Base one at a time and promote the current arrangement as the next Base.
 
 The current Scene Generator is a performance layer over one four-bar phrase. The A/B part scenes described in Phase 3 are a separate future system tied to saved arrangement parts.
 

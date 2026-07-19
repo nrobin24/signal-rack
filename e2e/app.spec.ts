@@ -6,6 +6,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript((ids) => {
     const calls: Array<{ command: string; args?: Record<string, unknown> }> = []
     const listeners = new Map<string, Set<(payload: unknown) => void>>()
+    let audioMonitor = { active: false, inputName: null as string | null, outputName: null as string | null, sampleRate: null as number | null, level: 1.5 }
     const steps = (notes: number[]) => Array.from({ length: 64 }, (_, index) => ({ notes: index % 16 === 0 ? notes : [], velocity: 100, gate: 50, probability: 100 }))
     const acidSteps = () => Array.from({ length: 64 }, (_, index) => {
       const local = index % 16
@@ -19,6 +20,20 @@ test.beforeEach(async ({ page }) => {
       async invoke(command: string, args?: Record<string, unknown>): Promise<unknown> {
         calls.push({ command, args })
         if (command === 'list_outputs') return ['Mock Digitone', 'Mock Digitakt', 'Mock TD-3']
+        if (command === 'list_audio_devices') return { inputs: ['Mock Audio Interface'], outputs: ['Mock MacBook Speakers'], defaultInput: 'Mock Audio Interface', defaultOutput: 'Mock MacBook Speakers' }
+        if (command === 'get_audio_monitor_status') return audioMonitor
+        if (command === 'start_audio_monitor') {
+          audioMonitor = { active: true, inputName: 'Mock Audio Interface', outputName: 'Mock MacBook Speakers', sampleRate: 48000, level: Number(args?.level ?? 1) }
+          return undefined
+        }
+        if (command === 'set_audio_monitor_level') {
+          audioMonitor = { ...audioMonitor, level: Number(args?.level ?? 1) }
+          return undefined
+        }
+        if (command === 'stop_audio_monitor') {
+          audioMonitor = { active: false, inputName: null, outputName: null, sampleRate: null, level: audioMonitor.level }
+          return undefined
+        }
         if (command === 'get_status') return { playing: false, outputNames: (window as unknown as { __SIGNAL_RACK_OUTPUT_NAMES__?: { digitone: string | null; digitakt: string | null; td3: string | null } }).__SIGNAL_RACK_OUTPUT_NAMES__ ?? { digitone: 'Mock Digitone', digitakt: 'Mock Digitakt', td3: 'Mock TD-3' } }
         if (command === 'choose_lab_session_path') {
           const choice = (window as unknown as { __SIGNAL_RACK_EXPORT_CHOICE__?: string | null }).__SIGNAL_RACK_EXPORT_CHOICE__
@@ -53,6 +68,27 @@ test.beforeEach(async ({ page }) => {
       }
     }
   }, trackIds)
+})
+
+test('routes a selected native audio input to an output independently of transport', async ({ page }) => {
+  await page.goto('/')
+
+  const monitor = page.getByRole('region', { name: 'Audio monitor' })
+  await expect(monitor.getByLabel('Audio input')).toHaveValue('0')
+  await expect(monitor.getByLabel('Audio output')).toHaveValue('0')
+  await monitor.getByRole('button', { name: 'MONITOR' }).click()
+  await expect(monitor.getByRole('button', { name: 'MONITORING' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(monitor.getByText('48 KHZ')).toBeVisible()
+  await expect(page.getByRole('button', { name: '■ STOP' })).toBeDisabled()
+
+  await monitor.getByLabel('Audio monitor level').fill('250')
+  await monitor.getByRole('button', { name: 'MONITORING' }).click()
+  await expect(monitor.getByRole('button', { name: 'MONITOR' })).toHaveAttribute('aria-pressed', 'false')
+
+  const calls = await page.evaluate(() => (window as unknown as { __SIGNAL_RACK_CALLS__: Array<{ command: string; args?: Record<string, unknown> }> }).__SIGNAL_RACK_CALLS__)
+  expect(calls.find((call) => call.command === 'start_audio_monitor')?.args).toEqual({ inputIndex: 0, outputIndex: 0, level: 1.5 })
+  expect(calls.find((call) => call.command === 'set_audio_monitor_level')?.args).toEqual({ level: 2.5 })
+  expect(calls.some((call) => call.command === 'stop_audio_monitor')).toBe(true)
 })
 
 test('shows routing in the center and preserves instrument heights while devices are disconnected', async ({ page }) => {
@@ -143,8 +179,22 @@ test('loops enabled mixer scenes on transport-clock bar boundaries', async ({ pa
   await expect(scenes.getByRole('button', { name: 'BUILD', exact: true })).toHaveAttribute('aria-pressed', 'true')
 })
 
+test('generates the displayed Warm House and House Interlock settings as the playable startup base', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByText('READY TO MUTATE')).toBeVisible()
+
+  const calls = await page.evaluate(() => (window as unknown as { __SIGNAL_RACK_CALLS__: Array<{ command: string; args?: { variation?: number; settings?: Record<string, unknown>; config?: { tracks?: Array<{ id: string; length: number }> } } }> }).__SIGNAL_RACK_CALLS__)
+  const startupRequests = calls.filter((call) => call.command === 'generate_seed' && call.args?.variation === 0)
+  expect(startupRequests).toHaveLength(1)
+  expect(startupRequests[0].args?.settings).toMatchObject({ root: 1, harmony: 'house', bassRole: 'answer', rhythm: 'house', energy: 'medium', shape: 'aa-turn', leader: 'bass', cycleMode: 'auto' })
+  const startupConfiguration = [...calls].reverse().find((call) => call.command === 'configure')
+  expect(startupConfiguration?.args?.config?.tracks).toHaveLength(11)
+  expect(startupConfiguration?.args?.config?.tracks?.find((track) => track.id === 'dn-bass')?.length).toBe(64)
+})
+
 test('drives the complete rack through the Tauri command boundary', async ({ page }) => {
   await page.goto('/')
+  await expect(page.getByText('READY TO MUTATE')).toBeVisible()
 
   await expect(page.locator('.rack-unit')).toHaveCount(8)
   await expect(page.locator('.lfo-card')).toHaveCount(4)
@@ -387,7 +437,7 @@ test('drives the complete rack through the Tauri command boundary', async ({ pag
   await page.getByRole('button', { name: /STOP/ }).click()
 
   const calls = await page.evaluate(() => (window as unknown as { __SIGNAL_RACK_CALLS__: Array<{ command: string; args?: Record<string, unknown> }> }).__SIGNAL_RACK_CALLS__)
-  const generation = calls.find((call) => call.command === 'generate_seed')
+  const generation = calls.find((call) => call.command === 'generate_seed' && call.args?.variation === 1)
   expect(generation).toBeTruthy()
   expect(generation?.args?.settings).toMatchObject({ rhythm: 'jungle', shape: 'event-space', leader: 'harmony', cycleMode: 'poly' })
   expect(calls.some((call) => call.command === 'start_transport')).toBe(true)
@@ -410,14 +460,14 @@ test('replaces one lane with a Euclidean cycle and carries nearby voicings onto 
   await page.locator('.euclidean-module').getByRole('button', { name: 'APPLY EUCLIDEAN' }).click()
 
   await expect(page.getByLabel('T2 / VAMP length')).toHaveValue('8')
-  await expect(page.getByLabel('T1 / BASS length')).toHaveValue('14')
-  await expect(page.getByLabel('T1 / KICK length')).toHaveValue('16')
+  await expect(page.getByLabel('T1 / BASS length')).toHaveValue('64')
+  await expect(page.getByLabel('T1 / KICK length')).toHaveValue('64')
 
   const vamp = page.locator('.lane').filter({ hasText: 'T2 / VAMP' })
-  await expect(vamp.getByLabel('Select T2 / VAMP step 1', { exact: true })).toContainText('E3 B3 D♯4')
+  await expect(vamp.getByLabel('Select T2 / VAMP step 1', { exact: true })).toContainText('D3 F3 A3 C4')
   await expect(vamp.getByLabel('Select T2 / VAMP step 2', { exact: true })).toContainText('REST')
-  await expect(vamp.getByLabel('Select T2 / VAMP step 4', { exact: true })).toContainText('E3 B3 D♯4')
-  await expect(vamp.getByLabel('Select T2 / VAMP step 7', { exact: true })).toContainText('B3 E4 F♯4')
+  await expect(vamp.getByLabel('Select T2 / VAMP step 4', { exact: true })).toContainText('D3 F3 A3 C4')
+  await expect(vamp.getByLabel('Select T2 / VAMP step 7', { exact: true })).toContainText('D3 F3 A3 C4')
   await expect(vamp.getByLabel('Select T2 / VAMP step 9', { exact: true })).toHaveClass(/outside-cycle/)
   const calls = await page.evaluate(() => (window as unknown as { __SIGNAL_RACK_CALLS__: Array<{ command: string; args?: { config?: { tracks?: Array<{ id: string; length: number; steps: Array<{ notes: number[] }> }> } } }> }).__SIGNAL_RACK_CALLS__)
   const applied = [...calls].reverse().find((call) => call.command === 'configure')
@@ -440,6 +490,74 @@ test('applies a generated phrase only to the selected instrument subset', async 
   await expect(kickLength).toHaveValue(originalKickLength)
   await expect(page.getByLabel('Arpeggio root')).toHaveValue('6')
   await expect(page.getByLabel('Arpeggio scale')).toHaveValue('dorian')
+})
+
+test('moves tonal lanes from a latched mutation into a promoted base without changing performance data', async ({ page }) => {
+  await page.goto('/')
+
+  const mutation = page.getByLabel('Phrase mutation')
+  const mutationTarget = page.getByLabel('Mutation target lane')
+  const applyMutation = page.getByRole('button', { name: 'APPLY MUTATION' })
+  await expect(mutation.locator('option')).toHaveCount(6)
+  await expect(mutation.locator('option')).toHaveText(['FIFTH UP', 'FIFTH DOWN', 'BRIGHTER', 'DARKER', 'RELATIVE SHIFT', 'PARALLEL SHIFT'])
+  await expect(mutationTarget.locator('option')).toHaveCount(7)
+  await expect(page.getByText('READY TO MUTATE')).toBeVisible()
+  await expect(applyMutation).toBeEnabled()
+  await mutationTarget.selectOption('td3-acid')
+  await applyMutation.click()
+  await expect(mutation).toBeDisabled()
+  await expect(page.getByText('1/4 TONAL LANES')).toBeVisible()
+
+  const firstMutation = await page.evaluate(() => {
+    const calls = (window as unknown as { __SIGNAL_RACK_CALLS__: Array<{ command: string; args?: { config?: { tracks?: Array<{ id: string; tone?: number; steps: Array<{ notes: number[]; velocity: number; gate: number; probability: number }> }> } } }> }).__SIGNAL_RACK_CALLS__
+    return [...calls].reverse().find((call) => call.command === 'configure')?.args?.config?.tracks
+  })
+  expect(firstMutation?.find((track) => track.id === 'td3-acid')?.steps[0]).toEqual({ notes: [44], velocity: 127, gate: 54, probability: 100, accent: true, slide: false })
+  expect(firstMutation?.find((track) => track.id === 'dn-vamp')?.steps[0].notes).toEqual([50, 53, 57, 60])
+  expect(firstMutation?.find((track) => track.id === 'dn-vamp')?.tone).toBe(72)
+
+  await mutationTarget.selectOption('dn-vamp')
+  await applyMutation.click()
+  await expect(page.getByText('2/4 TONAL LANES')).toBeVisible()
+  const secondMutation = await page.evaluate(() => {
+    const calls = (window as unknown as { __SIGNAL_RACK_CALLS__: Array<{ command: string; args?: { config?: { tracks?: Array<{ id: string; steps: Array<{ notes: number[] }> }> } } }> }).__SIGNAL_RACK_CALLS__
+    return [...calls].reverse().find((call) => call.command === 'configure')?.args?.config?.tracks
+  })
+  expect(secondMutation?.find((track) => track.id === 'dn-vamp')?.steps[0].notes).toEqual([57, 60, 64, 67])
+
+  await page.getByRole('button', { name: 'MAKE CURRENT BASE' }).click()
+  await expect(mutation).toBeEnabled()
+  await expect(page.getByLabel('ROOT', { exact: true })).toHaveValue('8')
+  await expect(page.getByText('READY TO MUTATE')).toBeVisible()
+
+  await mutationTarget.selectOption('td3-acid')
+  await applyMutation.click()
+  const promotedMutation = await page.evaluate(() => {
+    const calls = (window as unknown as { __SIGNAL_RACK_CALLS__: Array<{ command: string; args?: { config?: { tracks?: Array<{ id: string; steps: Array<{ notes: number[] }> }> } } }> }).__SIGNAL_RACK_CALLS__
+    return [...calls].reverse().find((call) => call.command === 'configure')?.args?.config?.tracks
+  })
+  expect(promotedMutation?.find((track) => track.id === 'td3-acid')?.steps[0].notes).toEqual([51])
+})
+
+test('keeps every harmonic mutation audible on a sparse acid lane and can return it to base', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByText('READY TO MUTATE')).toBeVisible()
+  await page.getByLabel('Mutation target lane').selectOption('td3-acid')
+
+  for (const value of ['brighter', 'darker', 'relative-shift', 'parallel-shift']) {
+    await page.getByLabel('Phrase mutation').selectOption(value)
+    await page.getByRole('button', { name: 'APPLY MUTATION' }).click()
+    const acidNotes = await page.evaluate(() => {
+      const calls = (window as unknown as { __SIGNAL_RACK_CALLS__: Array<{ command: string; args?: { config?: { tracks?: Array<{ id: string; steps: Array<{ notes: number[] }> }> } } }> }).__SIGNAL_RACK_CALLS__
+      return [...calls].reverse().find((call) => call.command === 'configure')?.args?.config?.tracks?.find((track) => track.id === 'td3-acid')?.steps.map((step) => step.notes)
+    })
+    expect(acidNotes).not.toEqual(Array.from({ length: 64 }, (_, index) => {
+      const local = index % 16
+      return [0, 3, 6, 7, 10, 14].includes(local) ? [local === 7 ? 49 : 37 + (local % 5)] : []
+    }))
+    await page.getByRole('button', { name: 'RETURN MUTATED LANES' }).click()
+    await expect(page.getByLabel('Phrase mutation')).toBeEnabled()
+  }
 })
 
 test('generates and edits a monophonic TD-3 phrase with accent and slide articulation', async ({ page }) => {
@@ -502,7 +620,7 @@ test('keeps rapid generation requests distinct and applies the newest response',
   const variations = await page.evaluate(() => (window as unknown as { __SIGNAL_RACK_CALLS__: Array<{ command: string; args?: { variation?: number } }> }).__SIGNAL_RACK_CALLS__
     .filter((call) => call.command === 'generate_seed')
     .map((call) => call.args?.variation))
-  expect(variations).toEqual([1, 2])
+  expect(variations).toEqual([0, 1, 2])
 })
 
 test('exports Generator Lab sessions through Save As and keeps canceled work unexported', async ({ page }) => {

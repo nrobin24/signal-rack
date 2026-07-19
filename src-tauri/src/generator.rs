@@ -475,7 +475,10 @@ fn four_bar_positions(
                 bars[1] = consequence_pattern(&identity, random);
                 bars[2] = thin_pattern(&identity, 1);
                 bars[3] = return_pattern(&identity);
-            } else if matches!(role, Role::Texture | Role::Vamp | Role::Puncture | Role::Acid) {
+            } else if matches!(
+                role,
+                Role::Texture | Role::Vamp | Role::Puncture | Role::Acid
+            ) {
                 bars[2] = thin_pattern(&identity, 1);
             }
             if turns {
@@ -879,7 +882,8 @@ fn acid_steps(
         let bar = position / BAR_STEPS;
         let local_event = event_in_bar[bar];
         event_in_bar[bar] += 1;
-        let degree_index = motif[(event_index + usize::from(bar == 1)) % motif.len()] % degrees.len();
+        let degree_index =
+            motif[(event_index + usize::from(bar == 1)) % motif.len()] % degrees.len();
         let mut pitch = root + degrees[degree_index];
 
         // Bar three supplies the characteristic register flare; the final bar folds back toward
@@ -1395,7 +1399,11 @@ mod tests {
 
             assert_eq!(acid.length, PHRASE_STEPS);
             assert!(active.iter().all(|step| step.notes.len() == 1));
-            assert!(active.iter().any(|step| step.accent && step.velocity == 127));
+            assert!(
+                active
+                    .iter()
+                    .any(|step| step.accent && step.velocity == 127)
+            );
             assert!(active.iter().any(|step| step.slide && step.gate == 100));
             assert!(active.iter().any(|step| step.notes[0] >= 48 + input.root));
         }

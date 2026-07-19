@@ -10,7 +10,7 @@ React renders the rack interface. Rust owns phrase generation, MIDI clocking, mo
 
 ## What is in the rack
 
-- **Phrase Generator** creates related bass, harmony, puncture, and drum material from root, harmony, style, energy, four-bar shape, phrase leader, and cycle choices.
+- **Phrase Generator** creates related bass, harmony, puncture, and drum material from root, harmony, style, energy, four-bar shape, phrase leader, and cycle choices, then lets the tonal form mutate lane by lane during a performance.
 - **Modulation Generator** provides eight clock-synced LFOs. Standard waveforms, sample-and-hold, and editable drawn curves can be routed to supported parameters from a quarter note through 128 bars.
 - **Euclidean Generator** applies one of twelve useful Euclidean rhythms—or a custom hit, step, and rotation combination—to any lane.
 - **Arpeggio Generator** applies phrase-aware pitch classes to a melodic lane, with octave range, direction, repetition, and trigger-placement controls.
@@ -85,7 +85,7 @@ The standard TD-3 MIDI chart does not expose dedicated accent or slide CCs. Sign
 
 ## Musical workflow
 
-Choose a phrase direction and press **Generate**. The phrase engine writes a related 64-step proposition across all eleven lanes:
+The rack starts by generating the phrase shown in its controls—C♯, Warm House, House Interlock, medium energy, A · A′ · B · turn, and Bass Leads—and stores that playable result as the initial mutation Base. Change the direction and press **Apply Phrase** whenever you want the phrase engine to write a new related 64-step proposition across all eleven lanes:
 
 - Digitone receives bass motifs, extended chord movement, upper-register punctures, groove, probability, and starting parameter values.
 - Digitakt receives related kick, backbeat, hat, percussion, and texture parts across the same four-bar form.
@@ -94,6 +94,8 @@ Choose a phrase direction and press **Generate**. The phrase engine writes a rel
 The available phrase shapes are A–A′–B–turn, question/answer, event/consequence/space/return, and call/pressure/break/challenge. The phrase leader determines which musical family carries the development while the other roles support it.
 
 The **Cycle** choice controls loop relationships. **Locked** keeps all lanes on 64 steps, **Auto** gives one supporting Digitone voice a shorter cycle, and **Poly** uses two independent Digitone cycles while retaining a four-bar phrase leader.
+
+The mutation controls move the live arrangement from that Base toward **Fifth Up**, **Fifth Down**, **Brighter**, **Darker**, **Relative Shift**, or **Parallel Shift**. Apply one mutation first to a lane such as Acid, then move the remaining Digitone or TD-3 lanes whenever the external mix is ready for them. The first application latches the mutation so every later lane derives from the same Base and reaches the same tonal destination. **Return Mutated Lanes** restores only the lanes already moved; **Make Current Base** promotes exactly what is currently playing so the next mutation starts there. Mutations change notes only. They leave rhythm, velocity, gate, probability, groove, cutoff, delay, and modulation untouched.
 
 After generation, use the lane generators for targeted changes, Scene Generator for coordinated density changes, and lane or instrument mutes for manual performance.
 
