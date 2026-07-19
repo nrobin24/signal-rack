@@ -1,22 +1,23 @@
 <p align="center">
-  <img src="docs/images/signal-rack-hero.png" alt="Signal Rack generative MIDI sequencer for Elektron Digitone and Digitakt" width="100%" />
+  <img src="docs/images/signal-rack-hero.png" alt="Signal Rack generative MIDI sequencer for Digitone, Digitakt, and TD-3" width="100%" />
 </p>
 
 # Signal Rack
 
-Signal Rack is a desktop MIDI sketching environment for Elektron Digitone and Digitakt. A small set of musical choices produces a coordinated four-bar idea across both instruments, which can then be reshaped, edited, and performed without turning the application into a DAW.
+Signal Rack is a desktop MIDI sketching environment for Elektron Digitone and Digitakt plus Behringer TD-3. A small set of musical choices produces a coordinated four-bar idea across the rack, which can then be reshaped, edited, and performed without turning the application into a DAW.
 
 React renders the rack interface. Rust owns phrase generation, MIDI clocking, modulation, event scheduling, and native MIDI output through Tauri.
 
 ## What is in the rack
 
-- **Phrase Generator** creates related bass, harmony, puncture, and drum material from root, harmony, style, energy, four-bar shape, phrase leader, and cycle choices.
+- **Phrase Generator** creates related bass, harmony, puncture, acid, and drum material from root, harmony, style, energy, four-bar shape, phrase leader, and cycle choices. Seven analyzed-track presets load complete parameter and tempo configurations, and the tonal form can then mutate lane by lane during a performance.
 - **Modulation Generator** provides eight clock-synced LFOs. Standard waveforms, sample-and-hold, and editable drawn curves can be routed to supported parameters from a quarter note through 128 bars.
-- **Euclidean Generator** applies one of twelve useful Euclidean rhythms—or a custom hit, step, and rotation combination—to a single Digitone or Digitakt lane.
-- **Arpeggio Generator** applies phrase-aware pitch classes to one Digitone lane, with octave range, direction, repetition, and trigger-placement controls.
+- **Euclidean Generator** applies one of twelve useful Euclidean rhythms—or a custom hit, step, and rotation combination—to any lane.
+- **Arpeggio Generator** applies phrase-aware pitch classes to a melodic lane, with octave range, direction, repetition, and trigger-placement controls.
 - **Scene Generator** provides eight coordinated density states for both instruments: Full, Core, Bass, Space, Tops, Drums, Melody, and Drop.
 - **Digitone** has bass, chord/vamp, and puncture lanes with editable notes, groove, probability, octave, cutoff, delay, and LFO routing.
 - **Digitakt** has kick, snare, closed-hat, open-hat, rimshot, clap, and texture lanes with editable trigs, groove, probability, cutoff, delay, and LFO routing.
+- **TD-3** has one monophonic acid lane with editable note, accent, slide, octave, groove, and probability.
 
 Every lane can hold 64 steps. **Edit 1 Bar** provides detailed 16-step editing, while **View 4 Bars** shows the complete phrase and lets any step be opened directly.
 
@@ -52,7 +53,7 @@ Pushing a version tag such as `v0.4.0` builds Windows x64 and Apple Silicon inst
 
 ## Hardware setup
 
-The transport and tempo are global. Digitone and Digitakt each have a MIDI-output and channel panel, and either instrument can operate by itself. Once a device has been selected, its setup panel collapses to keep the rack compact.
+The transport and tempo are global. Digitone, Digitakt, and TD-3 each have a MIDI-output and channel panel, and any instrument can operate by itself. Once a device has been selected, its setup panel collapses to keep the rack compact.
 
 ### Digitone
 
@@ -74,16 +75,31 @@ Signal Rack sends MIDI note 60 to each track channel, playing the Sound already 
 
 In Detail view, the main pad surface toggles a trig and the smaller **Edit** control opens velocity, gate, and probability without changing the trig state.
 
+### TD-3
+
+1. Connect TD-3 over USB or DIN MIDI and select it in the TD-3 setup panel.
+2. Match the TD-3 receive channel to the acid lane channel; both default to channel 1.
+3. Use direct note playback rather than running a competing internal TD-3 pattern.
+
+The standard TD-3 MIDI chart does not expose dedicated accent or slide CCs. Signal Rack sends accented cells at velocity 127 and creates slides by overlapping the current note into the immediately following note. The lane remains strictly monophonic. A TD-3-only MIDI port does not receive clock or Start/Stop, avoiding accidental playback of its onboard sequencer; use a separate port or MIDI filtering when another clocked instrument shares the same physical output.
+
 ## Musical workflow
 
-Choose a phrase direction and press **Generate**. The phrase engine writes a related 64-step proposition across all ten lanes:
+The rack starts by generating the phrase shown in its controls—C♯, Warm House, House Interlock, medium energy, A · A′ · B · turn, and Bass Leads—and stores that playable result as the initial mutation Base. Change the direction and press **Apply Phrase** whenever you want the phrase engine to write a new related 64-step proposition across all eleven lanes:
 
 - Digitone receives bass motifs, extended chord movement, upper-register punctures, groove, probability, and starting parameter values.
 - Digitakt receives related kick, backbeat, hat, percussion, and texture parts across the same four-bar form.
+- TD-3 receives a scale-aware acid counterline with generated accents, adjacent-note slides, register changes, syncopation, and a bar-four return.
+
+The **Preset** menu translates the supplied musical analyses into complete phrase settings and an appropriate global tempo. It includes Pangaea — Router, Moodymann — Black Mahogani, Photek — The Hidden Camera, Lone — Meeker Warm Energy, LFO — LFO (Leeds Warehouse Mix), Drexciya — Andreaen Sand Dunes, and Back 2 Basics — Fighting Vipers. Choosing one fills every phrase parameter; changing any parameter or the BPM returns the menu to **Custom** until the values match a preset again.
+
+Those presets add dedicated Phrygian, Dorian, major-rave, warehouse-minor, aquatic-Aeolian, and darkcore harmonic palettes; triplet two-step, human house, clinical breakbeat, dusty boom-bap, rigid warehouse, aquatic electro, and darkcore jungle styles; plus low-end roles for minor-third motion, jazz walking, semitone movement, and a root monolith.
 
 The available phrase shapes are A–A′–B–turn, question/answer, event/consequence/space/return, and call/pressure/break/challenge. The phrase leader determines which musical family carries the development while the other roles support it.
 
 The **Cycle** choice controls loop relationships. **Locked** keeps all lanes on 64 steps, **Auto** gives one supporting Digitone voice a shorter cycle, and **Poly** uses two independent Digitone cycles while retaining a four-bar phrase leader.
+
+The mutation controls move the live arrangement from that Base toward **Fifth Up**, **Fifth Down**, **Brighter**, **Darker**, **Relative Shift**, or **Parallel Shift**. Apply one mutation first to a lane such as Acid, then move the remaining Digitone or TD-3 lanes whenever the external mix is ready for them. The first application latches the mutation so every later lane derives from the same Base and reaches the same tonal destination. **Return Mutated Lanes** restores only the lanes already moved; **Make Current Base** promotes exactly what is currently playing so the next mutation starts there. Mutations change notes only. They leave rhythm, velocity, gate, probability, groove, cutoff, delay, and modulation untouched.
 
 After generation, use the lane generators for targeted changes, Scene Generator for coordinated density changes, and lane or instrument mutes for manual performance.
 
@@ -110,9 +126,9 @@ The native engine provides:
 
 - Absolute-deadline 24-PPQN MIDI clocking with synchronized transport messages.
 - Per-lane groove offsets, probability, velocity, gate scheduling, mutes, and note releases.
-- Shared-port or separate-port Digitone and Digitakt routing.
+- Shared-port or separate-port routing for all three instruments.
 - Cutoff, delay, and Digitone octave modulation.
-- Deterministic harmony, motif, and rhythm generation for all ten lanes.
+- Deterministic harmony, motif, and rhythm generation for all eleven lanes.
 
 The Playwright suite runs the real React interface against a mocked Tauri boundary, so browser tests never send notes to hardware. Rust tests cover generation, timing, LFO waveforms, clock periods, and value clamping. Use the native development window for actual MIDI validation.
 

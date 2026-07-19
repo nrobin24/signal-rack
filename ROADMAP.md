@@ -1,6 +1,6 @@
 # Signal Rack Development Roadmap
 
-Status: active. The Generator Lab foundation and the current rack-performance tools are implemented; controlled generator repair and later roadmap phases remain planned unless noted otherwise.
+Status: active. The Generator Lab foundation, current rack-performance tools, and a live lane-by-lane tonal mutation foundation are implemented; controlled generator repair and later roadmap phases remain planned unless noted otherwise.
 
 ## Roadmap
 
@@ -21,7 +21,7 @@ Signal Rack should not become a desktop recreation of an Elektron sequencer or a
 
 The rack currently includes:
 
-- A Phrase Generator for coordinated ten-lane, four-bar material.
+- A Phrase Generator for coordinated eleven-lane, four-bar material, with seven analyzed-track presets that set the full phrase configuration and tempo.
 - Eight clocked modulation sources, including drawn curves and 64/128-bar periods.
 - Twelve Euclidean presets plus custom hit, length, and rotation controls for one lane at a time.
 - A Digitone-only arpeggiator seeded from the generated phrase.
@@ -29,6 +29,7 @@ The rack currently includes:
 - Per-lane cutoff and delay modulation, plus Digitone octave modulation.
 - Collapsible per-instrument MIDI output and channel setup.
 - A Generator Lab scorecard, native Save As export, and warnings for unexported sessions.
+- Live Fifth Up, Fifth Down, Brighter, Darker, Relative Shift, and Parallel Shift mutations that can move tonal lanes from a stored Base one at a time and promote the current arrangement as the next Base.
 
 The current Scene Generator is a performance layer over one four-bar phrase. The A/B part scenes described in Phase 3 are a separate future system tied to saved arrangement parts.
 
@@ -724,6 +725,8 @@ Reuse the RD-6 drum-profile architecture:
 - Only documented parameter control later.
 
 ### 6.2 TD-3
+
+Implementation status: the first TD-3 profile is available with one monophonic lane, independent MIDI routing/channel setup, phrase-generated scale motion, accents, adjacent-note slides, and octave changes. Accent is rendered as high note-on velocity and slide as a short legato overlap because the standard TD-3 MIDI chart exposes neither as a dedicated CC.
 
 Reuse the Pro-1 monophonic foundation, then add explicit articulation behavior:
 

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub enum RackTarget {
     Digitone,
     Digitakt,
+    Td3,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -15,6 +16,8 @@ pub enum TrackId {
     DnVamp,
     #[serde(rename = "dn-puncture")]
     DnPuncture,
+    #[serde(rename = "td3-acid")]
+    Td3Acid,
     #[serde(rename = "dk-kick")]
     DkKick,
     #[serde(rename = "dk-snare")]
@@ -145,6 +148,10 @@ pub struct Step {
     pub velocity: u8,
     pub gate: u8,
     pub probability: u8,
+    #[serde(default)]
+    pub accent: bool,
+    #[serde(default)]
+    pub slide: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -204,6 +211,13 @@ pub enum HarmonyColor {
     House,
     JazzFunk,
     Open,
+    PhrygianDyads,
+    DetroitDorian,
+    NoirPhrygian,
+    RaveMajor,
+    WarehouseMinor,
+    AquaticMinor,
+    DarkcoreMinor,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -213,6 +227,12 @@ pub enum BassRole {
     Answer,
     Roam,
     Holes,
+    #[serde(rename = "minor-driver")]
+    MinorDriver,
+    #[serde(rename = "jazz-walk")]
+    JazzWalk,
+    Semitone,
+    Monolith,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -227,6 +247,19 @@ pub enum RhythmConcept {
     UkBass,
     Brazilian,
     Electro,
+    #[serde(rename = "two-step")]
+    TwoStep,
+    #[serde(rename = "human-house")]
+    HumanHouse,
+    #[serde(rename = "chopped-breaks")]
+    ChoppedBreaks,
+    #[serde(rename = "dusty-boom-bap")]
+    DustyBoomBap,
+    Warehouse,
+    #[serde(rename = "aquatic-electro")]
+    AquaticElectro,
+    #[serde(rename = "darkcore-jungle")]
+    DarkcoreJungle,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
