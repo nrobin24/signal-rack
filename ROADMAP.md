@@ -21,7 +21,7 @@ Signal Rack should not become a desktop recreation of an Elektron sequencer or a
 
 The rack currently includes:
 
-- A Phrase Generator for coordinated ten-lane, four-bar material.
+- A Phrase Generator for coordinated eleven-lane, four-bar material, with seven analyzed-track presets that set the full phrase configuration and tempo.
 - Eight clocked modulation sources, including drawn curves and 64/128-bar periods.
 - Twelve Euclidean presets plus custom hit, length, and rotation controls for one lane at a time.
 - A Digitone-only arpeggiator seeded from the generated phrase.

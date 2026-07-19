@@ -6,6 +6,8 @@ import {
   bassRoleLabels,
   harmonyLabels,
   phraseLeaderLabels,
+  phrasePresetFor,
+  phrasePresets,
   phraseShapeLabels,
   rhythmLabels,
   rootLabels,
@@ -14,6 +16,7 @@ import {
   type Energy,
   type HarmonyColor,
   type PhraseLeader,
+  type PhrasePreset,
   type PhraseShape,
   type RhythmConcept,
   type GeneratedSeed,
@@ -402,6 +405,11 @@ export default function App(): React.JSX.Element {
     if (playing) void backend.configure(config(digitoneTracks, digitaktTracks, scene, safeBpm))
   }
 
+  function selectPhrasePreset(preset: PhrasePreset): void {
+    setSeedSettings({ ...preset.settings })
+    updateBpm(preset.bpm)
+  }
+
   function updateDigitoneTrack(trackId: DigitoneTrackId, change: (track: DigitoneTrack) => DigitoneTrack): void {
     setDigitoneTracks((current) => {
       const next = current.map((track) => track.id === trackId ? change(track) : track)
@@ -685,7 +693,7 @@ export default function App(): React.JSX.Element {
       <div className="generator-column">
       {mode === 'generator-lab'
         ? <GeneratorLab settings={seedSettings} bpm={bpm} outputNames={{ digitone: selectedOutputs.digitone === null ? null : outputs[selectedOutputs.digitone] ?? null, digitakt: selectedOutputs.digitakt === null ? null : outputs[selectedOutputs.digitakt] ?? null, td3: selectedOutputs.td3 === null ? null : outputs[selectedOutputs.td3] ?? null }} canAudition={armedCount > 0} playingCandidateId={playingCandidateId} onSettings={setSeedSettings} onGenerate={generateLabBatch} onAudition={auditionLabCandidate} onStop={stopTransport} onExport={backend.exportLabSession} onUnexportedChange={setLabHasUnexportedSession} onExit={exitGeneratorLab} />
-        : <SeedLab settings={seedSettings} onSettings={setSeedSettings} onSeed={seedRack} lastSeed={lastSeed} busy={seedBusy} hasBase={phraseBase !== null} activeMutation={activeMutation} mutatedTrackIds={mutatedTrackIds} onMutate={applyPhraseMutation} onMakeBase={makeCurrentPhraseBase} onReturnToBase={returnMutatedLanesToBase} />}
+        : <SeedLab settings={seedSettings} bpm={bpm} onSettings={setSeedSettings} onPreset={selectPhrasePreset} onSeed={seedRack} lastSeed={lastSeed} busy={seedBusy} hasBase={phraseBase !== null} activeMutation={activeMutation} mutatedTrackIds={mutatedTrackIds} onMutate={applyPhraseMutation} onMakeBase={makeCurrentPhraseBase} onReturnToBase={returnMutatedLanesToBase} />}
 
       {mode === 'rack' && <EuclideanGenerator digitoneTracks={digitoneTracks} digitaktTracks={digitaktTracks} td3Tracks={td3Tracks} onGenerate={applyEuclidean} />}
 
@@ -752,18 +760,20 @@ export default function App(): React.JSX.Element {
   </main>
 }
 
-function SeedLab({ settings, onSettings, onSeed, lastSeed, busy, hasBase, activeMutation, mutatedTrackIds, onMutate, onMakeBase, onReturnToBase }: { settings: SeedSettings; onSettings: (settings: SeedSettings) => void; onSeed: (target: GeneratorTarget) => void; lastSeed: string; busy: boolean; hasBase: boolean; activeMutation: PhraseMutation | null; mutatedTrackIds: TrackId[]; onMutate: (mutation: PhraseMutation, target: GeneratorTarget) => void; onMakeBase: () => void; onReturnToBase: () => void }): React.JSX.Element {
+function SeedLab({ settings, bpm, onSettings, onPreset, onSeed, lastSeed, busy, hasBase, activeMutation, mutatedTrackIds, onMutate, onMakeBase, onReturnToBase }: { settings: SeedSettings; bpm: number; onSettings: (settings: SeedSettings) => void; onPreset: (preset: PhrasePreset) => void; onSeed: (target: GeneratorTarget) => void; lastSeed: string; busy: boolean; hasBase: boolean; activeMutation: PhraseMutation | null; mutatedTrackIds: TrackId[]; onMutate: (mutation: PhraseMutation, target: GeneratorTarget) => void; onMakeBase: () => void; onReturnToBase: () => void }): React.JSX.Element {
   const [target, setTarget] = useState<GeneratorTarget>('all')
   const [mutation, setMutation] = useState<PhraseMutation>('fifth-up')
   const [mutationTarget, setMutationTarget] = useState<GeneratorTarget>('all')
   const update = <Key extends keyof SeedSettings>(key: Key, value: SeedSettings[Key]): void => onSettings({ ...settings, [key]: value })
   const energyIndex = (['low', 'medium', 'high'] as Energy[]).indexOf(settings.energy)
   const selectedMutation = activeMutation ?? mutation
+  const selectedPreset = phrasePresetFor(settings, bpm)?.id ?? ''
   return <RackFrame className="seed-module">
     <div className="unit-heading">
       <div><h1>PHRASE GENERATOR</h1></div>
     </div>
     <div className="seed-controls">
+      <SeedSelect label="PRESET" value={selectedPreset} onChange={(value) => { const preset = phrasePresets.find((candidate) => candidate.id === value); if (preset) onPreset(preset) }}><option value="">Custom</option>{phrasePresets.map((preset) => <option value={preset.id} key={preset.id}>{preset.label}</option>)}</SeedSelect>
       <SeedSelect label="ROOT" value={settings.root} onChange={(value) => update('root', Number(value))}>{rootLabels.map((label, index) => <option value={index} key={label}>{label}</option>)}</SeedSelect>
       <SeedSelect label="HARMONY" value={settings.harmony} onChange={(value) => update('harmony', value as HarmonyColor)}>{entries(harmonyLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</SeedSelect>
       <SeedSelect label="STYLE" value={settings.rhythm} onChange={(value) => update('rhythm', value as RhythmConcept)}>{entries(rhythmLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</SeedSelect>

@@ -10,7 +10,7 @@ React renders the rack interface. Rust owns phrase generation, MIDI clocking, mo
 
 ## What is in the rack
 
-- **Phrase Generator** creates related bass, harmony, puncture, and drum material from root, harmony, style, energy, four-bar shape, phrase leader, and cycle choices, then lets the tonal form mutate lane by lane during a performance.
+- **Phrase Generator** creates related bass, harmony, puncture, acid, and drum material from root, harmony, style, energy, four-bar shape, phrase leader, and cycle choices. Seven analyzed-track presets load complete parameter and tempo configurations, and the tonal form can then mutate lane by lane during a performance.
 - **Modulation Generator** provides eight clock-synced LFOs. Standard waveforms, sample-and-hold, and editable drawn curves can be routed to supported parameters from a quarter note through 128 bars.
 - **Euclidean Generator** applies one of twelve useful Euclidean rhythms—or a custom hit, step, and rotation combination—to any lane.
 - **Arpeggio Generator** applies phrase-aware pitch classes to a melodic lane, with octave range, direction, repetition, and trigger-placement controls.
@@ -90,6 +90,10 @@ The rack starts by generating the phrase shown in its controls—C♯, Warm Hous
 - Digitone receives bass motifs, extended chord movement, upper-register punctures, groove, probability, and starting parameter values.
 - Digitakt receives related kick, backbeat, hat, percussion, and texture parts across the same four-bar form.
 - TD-3 receives a scale-aware acid counterline with generated accents, adjacent-note slides, register changes, syncopation, and a bar-four return.
+
+The **Preset** menu translates the supplied musical analyses into complete phrase settings and an appropriate global tempo. It includes Pangaea — Router, Moodymann — Black Mahogani, Photek — The Hidden Camera, Lone — Meeker Warm Energy, LFO — LFO (Leeds Warehouse Mix), Drexciya — Andreaen Sand Dunes, and Back 2 Basics — Fighting Vipers. Choosing one fills every phrase parameter; changing any parameter or the BPM returns the menu to **Custom** until the values match a preset again.
+
+Those presets add dedicated Phrygian, Dorian, major-rave, warehouse-minor, aquatic-Aeolian, and darkcore harmonic palettes; triplet two-step, human house, clinical breakbeat, dusty boom-bap, rigid warehouse, aquatic electro, and darkcore jungle styles; plus low-end roles for minor-third motion, jazz walking, semitone movement, and a root monolith.
 
 The available phrase shapes are A–A′–B–turn, question/answer, event/consequence/space/return, and call/pressure/break/challenge. The phrase leader determines which musical family carries the development while the other roles support it.
 

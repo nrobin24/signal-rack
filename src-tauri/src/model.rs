@@ -211,6 +211,13 @@ pub enum HarmonyColor {
     House,
     JazzFunk,
     Open,
+    PhrygianDyads,
+    DetroitDorian,
+    NoirPhrygian,
+    RaveMajor,
+    WarehouseMinor,
+    AquaticMinor,
+    DarkcoreMinor,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -220,6 +227,12 @@ pub enum BassRole {
     Answer,
     Roam,
     Holes,
+    #[serde(rename = "minor-driver")]
+    MinorDriver,
+    #[serde(rename = "jazz-walk")]
+    JazzWalk,
+    Semitone,
+    Monolith,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -234,6 +247,19 @@ pub enum RhythmConcept {
     UkBass,
     Brazilian,
     Electro,
+    #[serde(rename = "two-step")]
+    TwoStep,
+    #[serde(rename = "human-house")]
+    HumanHouse,
+    #[serde(rename = "chopped-breaks")]
+    ChoppedBreaks,
+    #[serde(rename = "dusty-boom-bap")]
+    DustyBoomBap,
+    Warehouse,
+    #[serde(rename = "aquatic-electro")]
+    AquaticElectro,
+    #[serde(rename = "darkcore-jungle")]
+    DarkcoreJungle,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

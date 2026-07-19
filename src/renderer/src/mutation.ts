@@ -33,9 +33,16 @@ const clampMidi = (note: number): number => Math.max(0, Math.min(127, note))
 const isMajorMode = (mode: TonalMode): boolean => ['mixolydian', 'ionian', 'lydian'].includes(mode)
 
 export function tonalContext(root: number, harmony: HarmonyColor): TonalContext {
+  const mode: TonalMode = harmony === 'house' || harmony === 'warehouse-minor' || harmony === 'aquatic-minor' || harmony === 'darkcore-minor'
+    ? 'aeolian'
+    : harmony === 'phrygian-dyads' || harmony === 'noir-phrygian'
+      ? 'phrygian'
+      : harmony === 'rave-major'
+        ? 'ionian'
+        : 'dorian'
   return {
     root: positiveModulo(root, 12),
-    mode: harmony === 'house' ? 'aeolian' : 'dorian'
+    mode
   }
 }
 

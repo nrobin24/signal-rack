@@ -192,6 +192,39 @@ test('generates the displayed Warm House and House Interlock settings as the pla
   expect(startupConfiguration?.args?.config?.tracks?.find((track) => track.id === 'dn-bass')?.length).toBe(64)
 })
 
+test('loads every analyzed track preset as a complete phrase and tempo configuration', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByText('READY TO MUTATE')).toBeVisible()
+
+  const presets = [
+    { id: 'pangaea-router', bpm: '138', root: '2', harmony: 'phrygian-dyads', bassRole: 'minor-driver', rhythm: 'two-step', energy: 'high', shape: 'question-answer', leader: 'bass', cycle: 'poly' },
+    { id: 'moodymann-black-mahogani', bpm: '124', root: '6', harmony: 'detroit-dorian', bassRole: 'jazz-walk', rhythm: 'human-house', energy: 'medium', shape: 'aa-turn', leader: 'harmony', cycle: 'poly' },
+    { id: 'photek-hidden-camera', bpm: '170', root: '7', harmony: 'noir-phrygian', bassRole: 'semitone', rhythm: 'chopped-breaks', energy: 'high', shape: 'call-challenge', leader: 'pulse', cycle: 'poly' },
+    { id: 'lone-meeker-warm-energy', bpm: '94', root: '8', harmony: 'rave-major', bassRole: 'jazz-walk', rhythm: 'dusty-boom-bap', energy: 'medium', shape: 'aa-turn', leader: 'harmony', cycle: 'auto' },
+    { id: 'lfo-leeds-warehouse', bpm: '125', root: '0', harmony: 'warehouse-minor', bassRole: 'monolith', rhythm: 'warehouse', energy: 'high', shape: 'event-space', leader: 'pulse', cycle: 'locked' },
+    { id: 'drexciya-andreaen-sand-dunes', bpm: '128', root: '4', harmony: 'aquatic-minor', bassRole: 'minor-driver', rhythm: 'aquatic-electro', energy: 'high', shape: 'call-challenge', leader: 'bass', cycle: 'poly' },
+    { id: 'back-2-basics-fighting-vipers', bpm: '164', root: '4', harmony: 'darkcore-minor', bassRole: 'minor-driver', rhythm: 'darkcore-jungle', energy: 'high', shape: 'event-space', leader: 'pulse', cycle: 'poly' }
+  ]
+  const presetSelect = page.getByLabel('PRESET')
+  await expect(presetSelect.locator('option')).toHaveCount(8)
+
+  for (const preset of presets) {
+    await presetSelect.selectOption(preset.id)
+    await expect(page.getByLabel('BPM')).toHaveValue(preset.bpm)
+    await expect(page.getByLabel('ROOT', { exact: true })).toHaveValue(preset.root)
+    await expect(page.getByLabel('HARMONY')).toHaveValue(preset.harmony)
+    await expect(page.getByLabel('BASS ROLE')).toHaveValue(preset.bassRole)
+    await expect(page.getByLabel('STYLE')).toHaveValue(preset.rhythm)
+    await expect(page.getByLabel('4-BAR SHAPE')).toHaveValue(preset.shape)
+    await expect(page.getByLabel('PHRASE LEADER')).toHaveValue(preset.leader)
+    await expect(page.getByRole('group', { name: 'Energy' }).getByRole('button', { name: preset.energy, exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByRole('group', { name: 'Cycle mode' }).getByRole('button', { name: preset.cycle.toUpperCase(), exact: true })).toHaveAttribute('aria-pressed', 'true')
+  }
+
+  await page.getByLabel('ROOT', { exact: true }).selectOption('3')
+  await expect(presetSelect).toHaveValue('')
+})
+
 test('drives the complete rack through the Tauri command boundary', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByText('READY TO MUTATE')).toBeVisible()
